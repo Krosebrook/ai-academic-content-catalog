@@ -1,8 +1,9 @@
 
 import React, { Suspense, lazy } from 'react';
-import { useAuth, AuthGuard } from './utils/auth-protection';
+import { useAuth } from './utils/auth-protection';
 
 const EducationPage = lazy(() => import('./components/pages/EducationPage'));
+const LandingPage = lazy(() => import('./components/pages/LandingPage'));
 
 const App: React.FC = () => {
   const { isAuthenticated, login, logout, startDemoSession } = useAuth();
@@ -46,12 +47,16 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="p-4 md:p-8">
-        <AuthGuard>
-          <Suspense fallback={<div>Loading Page...</div>}>
-            <EducationPage />
-          </Suspense>
-        </AuthGuard>
+      <main>
+        <Suspense fallback={<div className="p-8 text-center">Loading...</div>}>
+          {isAuthenticated ? (
+             <div className="p-4 md:p-8">
+                <EducationPage />
+             </div>
+          ) : (
+             <LandingPage onLogin={login} onStartDemo={startDemoSession} />
+          )}
+        </Suspense>
       </main>
     </div>
   );
