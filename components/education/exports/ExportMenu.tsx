@@ -1,11 +1,10 @@
-
 import React from 'react';
-import { EducationalContent, Assessment } from '../../../types/education';
+import { EducationalContent, Assessment, RubricContent } from '../../../types/education';
 import { toMarkdown, toJSON, toCSVFlashcards, toDocxTextOutline, toPptOutlineText } from '../../../utils/exports';
 import FFButton from '../shared/FFButton';
 
 interface ExportMenuProps {
-  content: EducationalContent | Assessment;
+  content: EducationalContent | Assessment | RubricContent;
 }
 
 const ExportMenu: React.FC<ExportMenuProps> = ({ content }) => {
@@ -39,9 +38,8 @@ const ExportMenu: React.FC<ExportMenuProps> = ({ content }) => {
         filename += '.txt';
         break;
       case 'ppt':
-        if (content.type !== 'assessment') {
-          data = toPptOutlineText(content);
-          filename += '_outline.txt';
+        if (content.type === 'lesson') {
+          data = toPptOutlineText(content as EducationalContent);
         }
         break;
     }

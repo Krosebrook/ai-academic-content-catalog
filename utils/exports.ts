@@ -1,11 +1,27 @@
+import { EducationalContent, Assessment, AssessmentQuestion, RubricContent } from '../types/education';
 
-import { EducationalContent, Assessment, AssessmentQuestion } from '../types/education';
+export function toMarkdown(content: EducationalContent | Assessment | RubricContent): string {
+  if (content.type === 'rubric') {
+    const rubric = content as RubricContent;
+    let md = `# Rubric: ${rubric.title}\n\n`;
+    md += `**Total Points:** ${rubric.pointsTotal}\n\n`;
+    
+    // Create header row
+    const headers = ['Criterion', ...rubric.rows[0].levels.map(l => `${l.label} (${l.points} pts)`)];
+    md += `| ${headers.join(' | ')} |\n`;
+    md += `| ${headers.map(() => '---').join(' | ')} |\n`;
 
-export function toMarkdown(content: EducationalContent | Assessment): string {
-  // FIX: Restructured the function to properly narrow types and handle both Assessment and EducationalContent.
-  // The check for `type === 'assessment'` and the existence of 'questions' property ensures we are dealing with a full Assessment object.
+    // Create content rows
+    rubric.rows.forEach(row => {
+      const cells = [row.criterion, ...row.levels.map(l => l.description.replace(/\n/g, '<br>'))];
+      md += `| ${cells.join(' | ')} |\n`;
+    });
+
+    return md;
+  }
+  
   if (content.type === 'assessment' && 'questions' in content) {
-    const assessment = content as Assessment; // Cast for clarity, though TS infers it.
+    const assessment = content as Assessment;
     let md = `# ${assessment.title}\n\n`;
     md += `## Questions (${assessment.pointsTotal} points)\n\n`;
     assessment.questions.forEach((q, index) => {
@@ -25,7 +41,6 @@ export function toMarkdown(content: EducationalContent | Assessment): string {
     }
     return md;
   } else {
-    // This handles all EducationalContent, including any that might have type: 'assessment' but are not full Assessment objects.
     const educationalContent = content as EducationalContent;
     let md = `# ${educationalContent.title}\n\n`;
     md += `**Subject:** ${educationalContent.subject}\n`;
@@ -39,7 +54,7 @@ export function toMarkdown(content: EducationalContent | Assessment): string {
   }
 }
 
-export function toJSON(content: EducationalContent | Assessment): string {
+export function toJSON(content: EducationalContent | Assessment | RubricContent): string {
   return JSON.stringify(content, null, 2);
 }
 
@@ -56,7 +71,7 @@ export function toCSVFlashcards(assessment: Assessment): string {
   return headers + rows;
 }
 
-export function toDocxTextOutline(content: EducationalContent | Assessment): string {
+export function toDocxTextOutline(content: EducationalContent | Assessment | RubricContent): string {
   const md = toMarkdown(content);
   // Simple conversion for text outline: remove markdown formatting
   return md

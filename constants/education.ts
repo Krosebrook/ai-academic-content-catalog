@@ -109,6 +109,8 @@ export const EDUCATIONAL_TOOL_CATEGORIES = [
       { id: 'as-08', name: 'Summative Unit Test', description: 'Build a comprehensive test covering an entire unit of study.', popularity: 4 },
       { id: 'as-09', name: 'Peer Review Form', description: 'Generate a structured form for students to give each other feedback.', popularity: 3 },
       { id: 'as-10', name: 'Portfolio Checklist', description: 'Create a checklist of required items for a student portfolio.', popularity: 2 },
+      { id: 'as-11', name: 'Custom Rubric Builder', description: 'Specify criteria, levels of achievement (e.g., Excellent, Good, Poor), and point values to generate a detailed rubric.', popularity: 5 },
+      { id: 'as-12', name: 'Quiz Question Generator', description: 'Generate a variety of quiz questions (multiple-choice, short-answer, etc.) on a specific topic.', popularity: 5 },
     ] 
   },
   { 
