@@ -1,6 +1,8 @@
-
-// FIX: Added a triple-slash directive to include Deno types and resolve "Cannot find name 'Deno'" errors.
-/// <reference lib="deno.ns" />
+// FIX: Add a Deno global type definition to resolve "Cannot find name 'Deno'" errors
+// in environments where Deno's types are not automatically available. This replaces
+// the /// <reference lib="deno.unstable" /> directive which was causing a
+// "Cannot find lib definition" error.
+declare const Deno: any;
 
 // Note: This is a Deno-based Supabase Edge Function.
 // It requires setting the SUPABASE_SERVICE_ROLE_KEY and GEMINI_API_KEY environment variables in Supabase.
@@ -65,7 +67,7 @@ const assessmentSchema = {
 };
 
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   // Handle CORS preflight request
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' } });

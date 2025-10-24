@@ -7,16 +7,66 @@ export const EDUCATIONAL_STANDARDS = [
 ];
 
 export const SUBJECTS = [
-  { id: 'mathematics', name: 'Mathematics', categories: ['Algebra','Geometry','Calculus','Statistics'] },
-  { id: 'science', name: 'Science', categories: ['Biology','Chemistry','Physics','Earth Science'] },
-  { id: 'english', name: 'English Language Arts', categories: ['Reading','Writing','Literature','Grammar'] },
-  { id: 'history', name: 'History & Social Studies', categories: ['US History','World History','Civics','Geography'] },
-  { id: 'computer_science', name: 'Computer Science', categories: ['Programming','Data Structures','AI','Web'] },
-  { id: 'foreign_language', name: 'World Languages', categories: ['Spanish','French','German','Mandarin'] },
-  { id: 'arts', name: 'Arts', categories: ['Music','Visual Arts','Drama','Design'] },
-  { id: 'pe', name: 'Physical Education', categories: ['Fitness','Health','Nutrition'] },
-  { id: 'economics', name: 'Economics', categories: ['Micro','Macro','Personal Finance'] },
-  { id: 'career', name: 'Career & Technical', categories: ['Business','Marketing','Trades'] }
+  { 
+    id: 'mathematics', 
+    name: 'Mathematics', 
+    categories: ['Algebra','Geometry','Calculus','Statistics'],
+    exampleTopics: ['Linear Equations', 'Pythagorean Theorem', 'Limits and Derivatives', 'Probability Distributions']
+  },
+  { 
+    id: 'science', 
+    name: 'Science', 
+    categories: ['Biology','Chemistry','Physics','Earth Science'],
+    exampleTopics: ['Cellular Respiration', 'The Periodic Table', 'Newton\'s Laws of Motion', 'The Rock Cycle']
+  },
+  { 
+    id: 'english', 
+    name: 'English Language Arts', 
+    categories: ['Reading','Writing','Literature','Grammar'],
+    exampleTopics: ['Analyzing Shakespeare', 'Crafting a Persuasive Essay', 'Symbolism in "The Great Gatsby"', 'Proper Use of Commas']
+  },
+  { 
+    id: 'history', 
+    name: 'History & Social Studies', 
+    categories: ['US History','World History','Civics','Geography'],
+    exampleTopics: ['The American Revolution', 'Ancient Roman Empire', 'The U.S. Constitution', 'Mapping Global Trade Routes']
+  },
+  { 
+    id: 'computer_science', 
+    name: 'Computer Science', 
+    categories: ['Programming','Data Structures','AI','Web'],
+    exampleTopics: ['Introduction to Python', 'Arrays and Linked Lists', 'Neural Networks Explained', 'Building a Simple Website with HTML/CSS']
+  },
+  { 
+    id: 'foreign_language', 
+    name: 'World Languages', 
+    categories: ['Spanish','French','German','Mandarin'],
+    exampleTopics: ['Spanish Verb Conjugation', 'French Cafe Culture', 'German Noun Genders', 'Basic Mandarin Phrases']
+  },
+  { 
+    id: 'arts', 
+    name: 'Arts', 
+    categories: ['Music','Visual Arts','Drama','Design'],
+    exampleTopics: ['Music Theory Basics', 'Introduction to Perspective Drawing', 'Improvisational Acting Techniques', 'Principles of Graphic Design']
+  },
+  { 
+    id: 'pe', 
+    name: 'Physical Education', 
+    categories: ['Fitness','Health','Nutrition'],
+    exampleTopics: ['Benefits of Cardiovascular Exercise', 'Understanding Mental Health', 'The Food Pyramid', 'Team Sports Strategies']
+  },
+  { 
+    id: 'economics', 
+    name: 'Economics', 
+    categories: ['Micro','Macro','Personal Finance'],
+    exampleTopics: ['Supply and Demand', 'GDP and Inflation', 'Budgeting and Saving', 'Stock Market Basics']
+  },
+  { 
+    id: 'career', 
+    name: 'Career & Technical', 
+    categories: ['Business','Marketing','Trades'],
+    exampleTopics: ['Writing a Business Plan', 'Digital Marketing Funnels', 'Introduction to Welding Safety', 'Public Speaking for Professionals']
+  }
 ];
 
 export const GRADE_LEVELS = [

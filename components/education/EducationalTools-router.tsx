@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { EDUCATIONAL_TOOL_CATEGORIES } from '../../constants/education';
 import FFCard from './shared/FFCard';
@@ -40,7 +39,6 @@ const CategoryIcons: Record<string, React.ReactNode> = {
 const EducationalToolsRouter: React.FC<{ onSelectTool: (toolId: string) => void }> = ({ onSelectTool }) => {
   const [selectedCategory, setSelectedCategory] = useState(EDUCATIONAL_TOOL_CATEGORIES[0].id);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortOption, setSortOption] = useState<'popularity' | 'name-asc' | 'name-desc'>('popularity');
   const [selectedToolInfo, setSelectedToolInfo] = useState<SelectedToolInfo | null>(null);
 
   const allToolsWithCategory = useMemo<ToolWithCategory[]>(() => 
@@ -59,37 +57,20 @@ const EducationalToolsRouter: React.FC<{ onSelectTool: (toolId: string) => void 
     const category = EDUCATIONAL_TOOL_CATEGORIES.find(cat => cat.id === selectedCategory);
     if (!category) return [];
     
-    let categoryTools = category.tools.map(tool => ({...tool, categoryId: category.id, categoryName: category.name}));
+    const categoryTools = category.tools.map(tool => ({...tool, categoryId: category.id, categoryName: category.name}));
 
-    if (searchQuery) {
-        categoryTools = categoryTools.filter(tool => 
-          tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          tool.description.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-    }
-
-    const sortedTools = [...categoryTools];
-    switch (sortOption) {
-        case 'popularity':
-            sortedTools.sort((a, b) => b.popularity - a.popularity);
-            break;
-        case 'name-asc':
-            sortedTools.sort((a, b) => a.name.localeCompare(b.name));
-            break;
-        case 'name-desc':
-            sortedTools.sort((a, b) => b.name.localeCompare(a.name));
-            break;
-    }
+    if (!searchQuery) return categoryTools;
     
-    return sortedTools;
-  }, [selectedCategory, searchQuery, sortOption]);
+    return categoryTools.filter(tool => 
+      tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      tool.description.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [selectedCategory, searchQuery]);
   
   const handleSelectAndClose = (toolId: string) => {
       onSelectTool(toolId);
       setSelectedToolInfo(null);
   };
-  
-  const currentCategoryName = EDUCATIONAL_TOOL_CATEGORIES.find(c => c.id === selectedCategory)?.name || 'Tools';
 
 
   return (
@@ -132,7 +113,7 @@ const EducationalToolsRouter: React.FC<{ onSelectTool: (toolId: string) => void 
               <h3 style={{fontFamily: 'var(--ff-font-primary)', fontSize: 'var(--ff-text-lg)', fontWeight: 'var(--ff-weight-semibold)'}} className="mb-4">
                 Most Popular Tools
               </h3>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 mb-8">
                   {popularTools.map(tool => (
                       <button 
                          key={tool.id} 
@@ -144,26 +125,6 @@ const EducationalToolsRouter: React.FC<{ onSelectTool: (toolId: string) => void 
                       </button>
                   ))}
               </div>
-          </div>
-          
-          <div className="flex justify-between items-center my-6 pt-6 border-t border-ff-surface">
-            <h3 style={{fontFamily: 'var(--ff-font-primary)', fontSize: 'var(--ff-text-xl)', fontWeight: 'var(--ff-weight-bold)'}}>
-              {currentCategoryName}
-            </h3>
-            <div className="flex items-center">
-              <label htmlFor="sort-tools" className="text-sm text-ff-text-muted mr-2">Sort by:</label>
-              <select 
-                id="sort-tools"
-                value={sortOption}
-                onChange={(e) => setSortOption(e.target.value as 'popularity' | 'name-asc' | 'name-desc')}
-                className="bg-ff-surface border border-slate-600 rounded-md p-2 text-sm"
-                style={{ color: 'var(--ff-text-primary)' }}
-              >
-                <option value="popularity">Popularity</option>
-                <option value="name-asc">Name (A-Z)</option>
-                <option value="name-desc">Name (Z-A)</option>
-              </select>
-            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 ff-stagger-fade">
