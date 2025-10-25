@@ -141,6 +141,7 @@ export const EDUCATIONAL_TOOL_CATEGORIES = [
         { id: 'sa-08', name: 'Cornell Notes Template', description: 'Create a structured notes template for a specific topic.', popularity: 3 },
         { id: 'sa-09', name: 'Citation Helper (APA/MLA)', description: 'Get help formatting citations for a bibliography.', popularity: 4 },
         { id: 'sa-10', name: 'Self-Correction Test', description: 'Create a practice test with detailed answer explanations.', popularity: 4 },
+        { id: 'sa-11', name: 'Flashcard Generator', description: 'Create term/definition pairs for import into Anki/Quizlet.', popularity: 5 },
     ] 
   },
   { 
@@ -171,6 +172,7 @@ export const EDUCATIONAL_TOOL_CATEGORIES = [
         { id: 'pp-06', name: 'Exam Prep Kit Outline', description: 'Outline the contents of a comprehensive exam prep kit for SAT/ACT.', popularity: 4 },
         { id: 'pp-07', name: 'Classroom Posters Content', description: 'Write the text for educational posters (e.g., grammar rules, lab safety).', popularity: 4 },
         { id: 'pp-08', name: 'Certificate of Achievement', description: 'Draft the wording for a printable award certificate.', popularity: 2 },
+        { id: 'pp-09', name: 'Infographic Creator', description: 'Generate engaging infographic outlines or content suggestions for visual topics.', popularity: 4 },
     ] 
   },
   { 
@@ -186,4 +188,27 @@ export const EDUCATIONAL_TOOL_CATEGORIES = [
         { id: 'la-07', name: 'Sentence Starters', description: 'Provide sentence starters to help students with writing assignments.', popularity: 5 },
     ] 
   },
+];
+
+export const DIFFICULTY_LEVELS = [
+  'Beginner',
+  'Intermediate',
+  'Advanced',
+  'Expert',
+];
+
+export const BLOOMS_TAXONOMY_LEVELS = [
+    { name: 'Remember', description: 'Recall facts and basic concepts.' },
+    { name: 'Understand', description: 'Explain ideas or concepts.' },
+    { name: 'Apply', description: 'Use information in new situations.' },
+    { name: 'Analyze', description: 'Draw connections among ideas.' },
+    { name: 'Evaluate', description: 'Justify a stand or decision.' },
+    { name: 'Create', description: 'Produce new or original work.' },
+];
+
+export const DIFFERENTIATION_PROFILES = [
+    { id: 'ell', name: 'English Language Learner', description: 'Students who are learning English as a second language.' },
+    { id: 'gifted', name: 'Gifted/Talented', description: 'Students who require enrichment and more complex challenges.' },
+    { id: 'reading_difficulties', name: 'Student with Reading Difficulties', description: 'Students who struggle with grade-level text, such as those with dyslexia.' },
+    { id: 'adhd', name: 'Student with Attention Difficulties', description: 'Students who may have ADHD and require support for focus and engagement.' },
 ];

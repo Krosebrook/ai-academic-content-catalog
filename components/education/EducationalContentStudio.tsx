@@ -1,13 +1,15 @@
+
+
 import React, { useState, useEffect } from 'react';
-import { GenerationParams, EducationalContent, Assessment, RubricContent } from '../../types/education';
+import { GenerationParams, EducationalContent, Assessment, RubricContent, Rubric } from '../../types/education';
 import { generateContent } from '../../services/geminiService';
 import { saveContent } from '../../utils/contentStorage';
-import { SUBJECTS, GRADE_LEVELS } from '../../constants/education';
+import { SUBJECTS, GRADE_LEVELS, DIFFICULTY_LEVELS, EDUCATIONAL_STANDARDS, BLOOMS_TAXONOMY_LEVELS, DIFFERENTIATION_PROFILES } from '../../constants/education';
 import FFCard from './shared/FFCard';
 import FFButton from './shared/FFButton';
-import ProgressBar from './shared/ProgressBar';
 import ExportMenu from './exports/ExportMenu';
 import RubricBuilderModal from './tools/RubricBuilderModal';
+import SelectRubricModal from './tools/SelectRubricModal';
 import { toMarkdown } from '../../utils/exports';
 import { parseEducationalContent, parseAssessment } from '../../utils/validation';
 
@@ -20,7 +22,7 @@ interface StudioProps {
 }
 
 const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
-    const [params, setParams] = useState<GenerationParams>({
+    const [params, setParams] = useState<Omit<GenerationParams, 'includeRubric' | 'associatedRubric'>>({
         audience: 'educator',
         type: 'lesson',
         subject: 'Science',
@@ -28,12 +30,23 @@ const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
         topic: 'Photosynthesis',
         standard: '',
         objectives: [],
+        difficulty: 'Intermediate',
+        bloomsLevel: 'Apply',
+        differentiationProfiles: [],
     });
     const [isGenerating, setIsGenerating] = useState(false);
-    const [progress, setProgress] = useState(0);
+    const [streamedText, setStreamedText] = useState('');
     const [error, setError] = useState('');
     const [generatedContent, setGeneratedContent] = useState<EducationalContent | Assessment | RubricContent | null>(null);
+    
+    // State for rubric modals
     const [isRubricBuilderOpen, setIsRubricBuilderOpen] = useState(false);
+    const [rubricBuilderMode, setRubricBuilderMode] = useState<'primary' | 'association'>('primary');
+    const [isSelectRubricModalOpen, setIsSelectRubricModalOpen] = useState(false);
+
+    // State for associating rubrics with assessments
+    const [includeRubric, setIncludeRubric] = useState(false);
+    const [associatedRubric, setAssociatedRubric] = useState<RubricContent | null>(null);
 
     useEffect(() => {
         if (toolSelection) {
@@ -54,10 +67,14 @@ const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
         }
     }, [toolSelection]);
 
-    // This effect pre-fills objectives when the topic, subject or type changes to 'lesson'.
     useEffect(() => {
-        if (params.type === 'lesson') {
-            setParams(prev => ({
+        // Clear differentiation profiles if content type is not 'lesson'
+        if (params.type !== 'lesson') {
+            setParams(prev => ({ ...prev, differentiationProfiles: [] }));
+        }
+
+        if (params.type === 'lesson' && params.topic && params.subject) {
+             setParams(prev => ({
                 ...prev,
                 objectives: [
                     `Students will be able to define key terms related to ${prev.topic}.`,
@@ -65,16 +82,11 @@ const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
                     `Students will be able to analyze a case study involving ${prev.topic}.`
                 ]
             }));
-        } else {
-             // If the type is not lesson, ensure objectives are cleared.
-             if(params.objectives && params.objectives.length > 0) {
-                 setParams(prev => ({...prev, objectives: []}))
-             }
         }
     }, [params.type, params.topic, params.subject]);
 
 
-    const handleParamChange = (field: keyof GenerationParams, value: string | string[]) => {
+    const handleParamChange = (field: keyof Omit<GenerationParams, 'includeRubric' | 'associatedRubric'>, value: string | string[]) => {
         setParams(prev => ({ ...prev, [field]: value }));
     };
 
@@ -94,27 +106,46 @@ const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
         newObjectives.splice(index, 1);
         setParams(prev => ({ ...prev, objectives: newObjectives }));
     };
+    
+    const handleDifferentiationChange = (profileName: string) => {
+        setParams(prev => {
+            const currentProfiles = prev.differentiationProfiles || [];
+            const newProfiles = currentProfiles.includes(profileName)
+                ? currentProfiles.filter(p => p !== profileName)
+                : [...currentProfiles, profileName];
+            return { ...prev, differentiationProfiles: newProfiles };
+        });
+    };
 
     const handleGenerate = async () => {
         setIsGenerating(true);
         setError('');
         setGeneratedContent(null);
-        setProgress(0);
+        setStreamedText('');
 
-        // Simulate progress for better UX
-        const progressInterval = setInterval(() => {
-            setProgress(p => (p < 90 ? p + 5 : p));
-        }, 200);
+        const onChunk = (chunk: string) => {
+            setStreamedText(prev => prev + chunk);
+        };
+        
+        const isAssessmentType = params.type === 'assessment' || params.type === 'assessment-questions';
+        
+        let rubricDataForApi: Rubric | undefined = undefined;
+        if (isAssessmentType && includeRubric && associatedRubric) {
+            const { id, type, generatedAt, ...rest } = associatedRubric;
+            rubricDataForApi = rest;
+        }
 
-        const result = await generateContent(params);
-        clearInterval(progressInterval);
-        setProgress(100);
+        const apiParams: GenerationParams = {
+            ...params,
+            includeRubric: isAssessmentType ? includeRubric : undefined,
+            associatedRubric: rubricDataForApi,
+        };
+
+        const result = await generateContent(apiParams, onChunk);
 
         if ('error' in result) {
             setError(result.error);
         } else {
-            // Validate the result
-            const isAssessmentType = params.type === 'assessment' || params.type === 'assessment-questions';
             const validation = isAssessmentType ? parseAssessment(result) : parseEducationalContent(result);
             if(validation.success) {
                 const finalContent = validation.data;
@@ -131,21 +162,95 @@ const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
     const handleFormSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (params.type === 'rubric') {
+            setRubricBuilderMode('primary');
             setIsRubricBuilderOpen(true);
         } else {
             handleGenerate();
         }
     };
+    
+    const openRubricBuilderForAssociation = () => {
+        setRubricBuilderMode('association');
+        setIsRubricBuilderOpen(true);
+    };
+
+    const onRubricGeneratedPrimary = (rubric: RubricContent) => {
+        setGeneratedContent(rubric);
+        // The modal already saves the content, so we just close it.
+        setIsRubricBuilderOpen(false);
+    };
+
+    const onRubricGeneratedAssociation = (rubric: RubricContent) => {
+        setAssociatedRubric(rubric);
+        // The modal already saves it via its own logic
+        setIsRubricBuilderOpen(false);
+    };
+    
+    const onRubricSelected = (rubric: RubricContent) => {
+        setAssociatedRubric(rubric);
+        setIsSelectRubricModalOpen(false);
+    };
 
     const renderContent = () => {
         if (!generatedContent) return null;
         const markdown = toMarkdown(generatedContent);
-        // This is a simplified markdown renderer. A real app would use a library like react-markdown.
+    
+        let html = '';
+        let inTable = false;
+        let inList = false;
+        const lines = markdown.split('\n');
+    
+        for (const line of lines) {
+            if (line.startsWith('|')) {
+                if (!inTable) {
+                    inTable = true;
+                    html += '<table>';
+                    const headers = line.split('|').slice(1, -1).map(h => `<th>${h.trim()}</th>`).join('');
+                    html += `<thead><tr>${headers}</tr></thead><tbody>`;
+                } else if (line.includes('---')) {
+                    // skip separator line
+                } else {
+                    const cells = line.split('|').slice(1, -1).map(c => `<td>${c.trim()}</td>`).join('');
+                    html += `<tr>${cells}</tr>`;
+                }
+            } else {
+                if (inTable) {
+                    inTable = false;
+                    html += '</tbody></table>';
+                }
+    
+                if (line.startsWith('- ')) {
+                    if (!inList) {
+                        inList = true;
+                        html += '<ul>';
+                    }
+                    html += `<li>${line.substring(2)}</li>`;
+                } else {
+                    if (inList) {
+                        inList = false;
+                        html += '</ul>';
+                    }
+                    if (line.startsWith('# ')) html += `<h1>${line.substring(2)}</h1>`;
+                    else if (line.startsWith('## ')) html += `<h2>${line.substring(3)}</h2>`;
+                    else if (line.startsWith('### ')) html += `<h3>${line.substring(4)}</h3>`;
+                    else if (line.match(/^---\s*$/)) html += `<hr />`;
+                    else if (line.trim() !== '') html += `<p>${line}</p>`;
+                }
+            }
+        }
+        if (inTable) html += '</tbody></table>';
+        if (inList) html += '</ul>';
+    
+        // Inline formatting
+        html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+    
         return (
             <div className="prose prose-invert max-w-none bg-ff-bg-dark p-4 rounded-md border border-slate-700"
-                 dangerouslySetInnerHTML={{ __html: markdown.replace(/\n/g, '<br />') }} />
+                 dangerouslySetInnerHTML={{ __html: html }} />
         );
     };
+    
+    const isAssessmentType = params.type === 'assessment' || params.type === 'assessment-questions';
 
     return (
         <>
@@ -177,12 +282,49 @@ const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
                                 {GRADE_LEVELS.map(g => <option key={g} value={g}>{g}</option>)}
                             </select>
                         </div>
+                        
+                        {(params.type === 'lesson' || isAssessmentType) && (
+                            <div className="ff-fade-in-up">
+                                <label htmlFor="educational-standard" className="block text-sm font-medium text-gray-400 mb-1">Educational Standard (optional)</label>
+                                <input
+                                    type="text"
+                                    id="educational-standard"
+                                    list="standards-list"
+                                    value={params.standard}
+                                    onChange={e => handleParamChange('standard', e.target.value)}
+                                    className="w-full bg-ff-surface p-2 rounded-md border border-slate-600"
+                                    placeholder="e.g., Common Core, NGSS"
+                                />
+                                <datalist id="standards-list">
+                                    {EDUCATIONAL_STANDARDS.map(s => <option key={s} value={s} />)}
+                                </datalist>
+                            </div>
+                        )}
+
+                        {(params.type === 'lesson' || isAssessmentType) && (
+                             <div className="ff-fade-in-up">
+                                <label className="block text-sm font-medium text-gray-400 mb-1">Bloom's Taxonomy Level</label>
+                                <select value={params.bloomsLevel} onChange={e => handleParamChange('bloomsLevel', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600">
+                                    {BLOOMS_TAXONOMY_LEVELS.map(d => <option key={d.name} value={d.name} title={d.description}>{d.name}</option>)}
+                                </select>
+                            </div>
+                        )}
+
+                        {(params.type === 'lesson' || isAssessmentType) && (
+                            <div className="ff-fade-in-up">
+                                <label className="block text-sm font-medium text-gray-400 mb-1">Difficulty Level</label>
+                                <select value={params.difficulty} onChange={e => handleParamChange('difficulty', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600">
+                                    {DIFFICULTY_LEVELS.map(d => <option key={d} value={d}>{d}</option>)}
+                                </select>
+                            </div>
+                        )}
+
                          <div>
                             <label className="block text-sm font-medium text-gray-400 mb-1">Topic</label>
                             <input type="text" value={params.topic} onChange={e => handleParamChange('topic', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600" />
                         </div>
                         
-                        {params.type === 'lesson' && (
+                        {(params.type === 'lesson' || isAssessmentType) && (
                             <div className="ff-fade-in-up space-y-2 pt-2">
                                 <label className="block text-sm font-medium text-gray-400 mb-1">Learning Objectives</label>
                                 {(params.objectives || []).map((obj, index) => (
@@ -200,6 +342,60 @@ const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
                                     </div>
                                 ))}
                                 <button type="button" onClick={handleAddObjective} className="text-sm text-ff-secondary hover:text-ff-primary">+ Add Objective</button>
+                            </div>
+                        )}
+
+                        {params.type === 'lesson' && (
+                            <div className="ff-fade-in-up space-y-2 pt-2">
+                                <label className="block text-sm font-medium text-gray-400 mb-1">Advanced Differentiation</label>
+                                <div className="p-3 bg-ff-bg-dark rounded-md border border-slate-700 space-y-2">
+                                    {DIFFERENTIATION_PROFILES.map(profile => (
+                                        <div key={profile.id} className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                id={`diff-${profile.id}`}
+                                                checked={(params.differentiationProfiles || []).includes(profile.name)}
+                                                onChange={() => handleDifferentiationChange(profile.name)}
+                                                className="h-4 w-4 rounded bg-ff-surface border-slate-600 text-ff-primary focus:ring-ff-primary"
+                                            />
+                                            <label htmlFor={`diff-${profile.id}`} className="text-sm font-medium text-gray-300 cursor-pointer" title={profile.description}>
+                                                {profile.name}
+                                            </label>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+
+                        {isAssessmentType && (
+                            <div className="ff-fade-in-up space-y-3 pt-3 border-t border-ff-surface">
+                                <div className="flex items-center gap-2">
+                                    <input type="checkbox" id="includeRubric" checked={includeRubric} onChange={e => {
+                                        setIncludeRubric(e.target.checked);
+                                        if (!e.target.checked) setAssociatedRubric(null);
+                                    }} className="h-4 w-4 rounded bg-ff-surface border-slate-600 text-ff-primary focus:ring-ff-primary" />
+                                    <label htmlFor="includeRubric" className="text-sm font-medium text-gray-300">Include Rubric</label>
+                                </div>
+
+                                {includeRubric && (
+                                    <div className="p-3 bg-ff-bg-dark rounded-md border border-slate-700 space-y-3">
+                                        {associatedRubric ? (
+                                            <div className="flex justify-between items-center">
+                                                <div className="text-sm">
+                                                    <p className="text-ff-text-muted">Associated Rubric:</p>
+                                                    <p className="font-semibold text-ff-text-primary">{associatedRubric.title}</p>
+                                                </div>
+                                                <button type="button" onClick={() => setAssociatedRubric(null)} className="text-xs text-red-400 hover:underline">Remove</button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-col sm:flex-row gap-2">
+                                                <FFButton type="button" onClick={openRubricBuilderForAssociation} variant="secondary" className="w-full text-xs">Create New Rubric</FFButton>
+                                                <FFButton type="button" onClick={() => setIsSelectRubricModalOpen(true)} variant="secondary" className="w-full text-xs" style={{backgroundColor: 'var(--ff-surface)'}}>Select Existing</FFButton>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -221,14 +417,18 @@ const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
                 <div className="lg:col-span-2">
                     {isGenerating && (
                         <FFCard>
-                            <div className="text-center p-8">
-                                <h3 className="text-lg font-semibold mb-4">Generating your content...</h3>
-                                <ProgressBar value={progress} />
+                            <h3 style={{fontFamily: 'var(--ff-font-primary)', fontSize: 'var(--ff-text-lg)', fontWeight: 'var(--ff-weight-semibold)'}} className="mb-4">
+                                Generating Response...
+                            </h3>
+                            <div className="bg-ff-bg-dark p-4 rounded-md border border-slate-700 max-h-96 overflow-y-auto">
+                                <pre className="text-sm whitespace-pre-wrap font-mono text-ff-text-secondary">
+                                    {streamedText}
+                                </pre>
                             </div>
                         </FFCard>
                     )}
                     {error && <FFCard><p className="text-red-400">{error}</p></FFCard>}
-                    {generatedContent && (
+                    {generatedContent && !isGenerating && (
                         <FFCard className="ff-fade-in-up">
                             {renderContent()}
                             <ExportMenu content={generatedContent} />
@@ -248,8 +448,13 @@ const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
             </div>
             {isRubricBuilderOpen && <RubricBuilderModal 
                 onClose={() => setIsRubricBuilderOpen(false)} 
+                onRubricGenerated={rubricBuilderMode === 'primary' ? onRubricGeneratedPrimary : onRubricGeneratedAssociation}
                 initialTopic={params.topic} 
-                initialTitle={`Rubric for ${params.topic}`} 
+                initialTitle={params.topic} 
+            />}
+            {isSelectRubricModalOpen && <SelectRubricModal
+                onClose={() => setIsSelectRubricModalOpen(false)}
+                onSelect={onRubricSelected}
             />}
         </>
     );

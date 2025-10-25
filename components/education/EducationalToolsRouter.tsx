@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { EDUCATIONAL_TOOL_CATEGORIES } from '../../constants/education';
 import FFCard from './shared/FFCard';
@@ -35,8 +36,11 @@ const CategoryIcons: Record<string, React.ReactNode> = {
     'language': <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2h1a2 2 0 002-2v-1a2 2 0 012-2h1.945M7.7 9.9a.5.5 0 01.5.5v2.2a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-2.2a.5.5 0 01.5-.5h1zM15.3 9.9a.5.5 0 01.5.5v2.2a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-2.2a.5.5 0 01.5-.5h1zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
 };
 
+interface EducationalToolsRouterProps {
+    onSelectTool: (tool: { id: string; name: string; categoryId: string; }) => void;
+}
 
-const EducationalToolsRouter: React.FC<{ onSelectTool: (toolId: string) => void }> = ({ onSelectTool }) => {
+const EducationalToolsRouter: React.FC<EducationalToolsRouterProps> = ({ onSelectTool }) => {
   const [selectedCategory, setSelectedCategory] = useState(EDUCATIONAL_TOOL_CATEGORIES[0].id);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedToolInfo, setSelectedToolInfo] = useState<SelectedToolInfo | null>(null);
@@ -68,7 +72,10 @@ const EducationalToolsRouter: React.FC<{ onSelectTool: (toolId: string) => void 
   }, [selectedCategory, searchQuery]);
   
   const handleSelectAndClose = (toolId: string) => {
-      onSelectTool(toolId);
+      const tool = allToolsWithCategory.find(t => t.id === toolId);
+      if (tool) {
+        onSelectTool({ id: tool.id, name: tool.name, categoryId: tool.categoryId });
+      }
       setSelectedToolInfo(null);
   };
 

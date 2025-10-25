@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 // Base Schemas
 export const zAudience = z.enum(['educator', 'student', 'both', 'seller']);
-export const zContentKind = z.enum(['lesson', 'assessment', 'activity', 'resource', 'printable', 'rubric', 'assessment-questions']);
+export const zContentKind = z.enum(['lesson', 'assessment', 'activity', 'resource', 'printable', 'rubric', 'assessment-questions', 'flashcard', 'infographic']);
 
 export const zRubricRow = z.object({
   criterion: z.string(),
@@ -24,7 +24,7 @@ export const zAssessmentQuestion = z.object({
   type: z.enum(['multiple-choice', 'short-answer', 'essay', 'true-false']),
   prompt: z.string(),
   choices: z.array(z.string()).optional(),
-  answerKey: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  answerKey: z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]).optional(),
   points: z.number().positive(),
 });
 
@@ -101,6 +101,11 @@ export interface GenerationParams {
   topic: string;
   standard?: string;
   objectives?: string[];
+  difficulty?: string;
+  bloomsLevel?: string;
+  differentiationProfiles?: string[];
+  includeRubric?: boolean;
+  associatedRubric?: Rubric | null;
 }
 
 export interface RubricGenerationParams {

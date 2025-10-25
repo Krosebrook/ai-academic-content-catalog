@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationParams, EducationalContent, Assessment, RubricGenerationParams, RubricContent } from "../types/education";
 
@@ -22,34 +23,10 @@ const lessonPlanSchema = {
                 duration: { type: Type.STRING, description: "Estimated duration, e.g., '45 minutes'." },
                 materials: { type: Type.ARRAY, items: { type: Type.STRING } },
                 objectives: { type: Type.ARRAY, items: { type: Type.STRING } },
-                differentiation: { type: Type.ARRAY, items: { type: Type.STRING } },
+                differentiation: { type: Type.ARRAY, items: { type: Type.STRING, description: "A list of specific, actionable differentiation strategies for the specified student profiles." } },
             }
         },
         generatedAt: { type: Type.STRING, description: 'The ISO 8601 timestamp of generation.' },
-    }
-};
-
-const assessmentSchema = {
-    type: Type.OBJECT,
-    properties: {
-        id: { type: Type.STRING, description: 'A UUID for the assessment.' },
-        title: { type: Type.STRING },
-        type: { type: Type.STRING, enum: ['assessment']},
-        questions: {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    id: { type: Type.STRING, description: 'A UUID for the question.' },
-                    type: { type: Type.STRING, enum: ['multiple-choice', 'short-answer', 'essay', 'true-false'] },
-                    prompt: { type: Type.STRING },
-                    choices: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    answerKey: { type: Type.STRING },
-                    points: { type: Type.NUMBER },
-                }
-            }
-        },
-        pointsTotal: { type: Type.NUMBER },
     }
 };
 
@@ -81,33 +58,87 @@ const rubricSchema = {
     }
 };
 
+const assessmentSchema = {
+    type: Type.OBJECT,
+    properties: {
+        id: { type: Type.STRING, description: 'A UUID for the assessment.' },
+        title: { type: Type.STRING },
+        type: { type: Type.STRING, enum: ['assessment']},
+        questions: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    id: { type: Type.STRING, description: 'A UUID for the question.' },
+                    type: { type: Type.STRING, enum: ['multiple-choice', 'short-answer', 'essay', 'true-false'] },
+                    prompt: { type: Type.STRING },
+                    choices: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    answerKey: {
+                        type: Type.STRING,
+                        description: 'The correct answer. For multiple-choice with multiple answers, provide a JSON string array of the correct choices (e.g., \'["Choice A", "Choice C"]\'). For essay questions, this can be a sample answer or key points. For true/false, it should be "true" or "false".'
+                    },
+                    points: { type: Type.NUMBER },
+                }
+            }
+        },
+        rubric: rubricSchema,
+        pointsTotal: { type: Type.NUMBER },
+    }
+};
 
 export const generateContent = async (
-    params: GenerationParams
+    params: GenerationParams,
+    onChunk: (chunk: string) => void
 ): Promise<EducationalContent | Assessment | { error: string }> => {
     
     const isAssessment = params.type === 'assessment' || params.type === 'assessment-questions';
     
+    let rubricInstructions = '';
+    if (isAssessment) {
+        if (params.includeRubric && params.associatedRubric) {
+            const rubricStructure = {
+                title: params.associatedRubric.title,
+                criteria: params.associatedRubric.rows.map(r => r.criterion),
+                levels: params.associatedRubric.rows[0]?.levels.map(l => ({ label: l.label, points: l.points })) || []
+            };
+            rubricInstructions = `
+- A rubric is required for this assessment. Use the following structure and generate detailed descriptions for each cell. The assessment questions should directly correspond to the criteria in this rubric.
+- Rubric Structure:
+  - Title: ${rubricStructure.title}
+  - Criteria: ${rubricStructure.criteria.join(', ')}
+  - Levels: ${rubricStructure.levels.map(l => `${l.label} (${l.points} pts)`).join(', ')}
+`;
+        } else if (params.includeRubric) {
+            rubricInstructions = `- Also, generate a comprehensive grading rubric for this assessment. The rubric should be included in the 'rubric' field of the JSON output. It should contain 3-4 relevant criteria and 3-4 performance levels.`;
+        }
+    }
+
     const prompt = `
         You are an expert curriculum designer. Generate an ${isAssessment ? 'assessment' : params.type} for the following specifications:
         - Audience: ${params.audience}
         - Subject: ${params.subject}
         - Grade Level: ${params.grade}
+        ${params.difficulty ? `- Difficulty Level: ${params.difficulty}` : ''}
+        ${params.bloomsLevel ? `- Cognitive Level (Bloom's Taxonomy): ${params.bloomsLevel}. Tailor the content to this cognitive level.` : ''}
         - Topic: ${params.topic}
         ${params.standard ? `- Align to Standard: ${params.standard}` : ''}
-        ${(params.objectives && params.objectives.length > 0 && !isAssessment) 
-            ? `- Learning Objectives:\n${params.objectives.map(o => `  - ${o}`).join('\n')}` 
+        ${(params.objectives && params.objectives.length > 0)
+            ? `- Learning Objectives:\n${params.objectives.map(o => `  - ${o}`).join('\n')}`
             : ''}
+        ${(params.differentiationProfiles && params.differentiationProfiles.length > 0 && !isAssessment)
+            ? `- Differentiation: Generate specific, actionable differentiation strategies for the following student profiles: ${params.differentiationProfiles.join(', ')}. These strategies should be included in the 'differentiation' array in the metadata.`
+            : ''}
+        ${rubricInstructions}
         
         The output must be a single JSON object that strictly adheres to the provided schema.
-        ${(params.objectives && params.objectives.length > 0 && !isAssessment) 
-            ? 'The generated lesson plan content and activities must directly support and align with the provided learning objectives.' 
+        ${(params.objectives && params.objectives.length > 0)
+            ? `The generated ${isAssessment ? 'assessment questions' : 'lesson plan content and activities'} must directly support and align with the provided learning objectives.`
             : ''}
         Do not include any text or formatting outside of the JSON object.
     `;
 
     try {
-        const response = await ai.models.generateContent({
+        const responseStream = await ai.models.generateContentStream({
             model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
@@ -116,14 +147,34 @@ export const generateContent = async (
             },
         });
 
-        const jsonText = response.text;
-        const result = JSON.parse(jsonText);
+        let aggregatedJsonText = '';
+        for await (const chunk of responseStream) {
+            const chunkText = chunk.text;
+            if (chunkText) {
+                aggregatedJsonText += chunkText;
+                onChunk(chunkText);
+            }
+        }
+        
+        const result = JSON.parse(aggregatedJsonText);
         
         // Add fields not generated by AI
         if (!isAssessment) {
             (result as EducationalContent).generatedAt = new Date().toISOString();
         } else {
             (result as Assessment).generatedAt = new Date().toISOString();
+            // Post-process answer keys for multiple-choice questions
+            if (result.questions && Array.isArray(result.questions)) {
+                result.questions.forEach((q: any) => {
+                    if (q.type === 'multiple-choice' && typeof q.answerKey === 'string' && q.answerKey.startsWith('[')) {
+                        try {
+                            q.answerKey = JSON.parse(q.answerKey);
+                        } catch (e) {
+                            console.warn('Could not parse answerKey as JSON array:', q.answerKey);
+                        }
+                    }
+                });
+            }
         }
 
         return result;

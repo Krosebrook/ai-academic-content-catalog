@@ -29,7 +29,8 @@ export function toMarkdown(content: EducationalContent | Assessment | RubricCont
         if (q.type === 'multiple-choice' && q.choices) {
             q.choices.forEach(choice => md += `- ${choice}\n`);
         }
-        md += `\n*Answer Key: ${q.answerKey}*\n\n`;
+        const answer = Array.isArray(q.answerKey) ? q.answerKey.join(', ') : q.answerKey;
+        md += `\n*Answer Key: ${answer}*\n\n`;
     });
     if (assessment.rubric) {
         md += `## Rubric\n\n`;

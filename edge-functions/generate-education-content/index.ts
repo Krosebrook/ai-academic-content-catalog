@@ -57,7 +57,10 @@ const assessmentSchema = {
                     type: { type: Type.STRING, enum: ['multiple-choice', 'short-answer', 'essay', 'true-false'] },
                     prompt: { type: Type.STRING },
                     choices: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    answerKey: { type: Type.STRING },
+                    answerKey: {
+                        type: Type.STRING,
+                        description: 'The correct answer. For multiple-choice with multiple answers, provide a JSON string array of the correct choices (e.g., \'["Choice A", "Choice C"]\'). For essay questions, this can be a sample answer or key points. For true/false, it should be "true" or "false".'
+                    },
                     points: { type: Type.NUMBER },
                 }
             }
@@ -115,6 +118,20 @@ Deno.serve(async (req: Request) => {
 
     const jsonText = response.text;
     const result = JSON.parse(jsonText);
+
+    if (isAssessment) {
+        if (result.questions && Array.isArray(result.questions)) {
+            result.questions.forEach((q: any) => {
+                if (q.type === 'multiple-choice' && typeof q.answerKey === 'string' && q.answerKey.startsWith('[')) {
+                    try {
+                        q.answerKey = JSON.parse(q.answerKey);
+                    } catch (e) {
+                        // Ignore if parsing fails, leave as string.
+                    }
+                }
+            });
+        }
+    }
 
     return new Response(JSON.stringify(result), {
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
