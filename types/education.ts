@@ -1,132 +1,70 @@
 import { z } from 'zod';
 
-// Base Schemas
-export const zAudience = z.enum(['educator', 'student', 'both', 'seller']);
-export const zContentKind = z.enum(['lesson', 'assessment', 'activity', 'resource', 'printable', 'rubric', 'assessment-questions', 'flashcard', 'infographic', 'image']);
+export type ContentType = 'lesson' | 'activity' | 'resource' | 'printable' | 'assessment' | 'rubric' | 'image' | 'assessment-questions';
 
-export const zRubricRow = z.object({
-  criterion: z.string(),
-  levels: z.array(z.object({
-    label: z.string(),
-    description: z.string(),
-    points: z.number(),
-  })),
-});
-
-export const zRubric = z.object({
-  title: z.string(),
-  rows: z.array(zRubricRow),
-  pointsTotal: z.number(),
-});
-
-export const zAssessmentQuestion = z.object({
-  id: z.string().uuid(),
-  type: z.enum(['multiple-choice', 'short-answer', 'essay', 'true-false']),
-  prompt: z.string(),
-  choices: z.array(z.string()).optional(),
-  answerKey: z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]).optional(),
-  points: z.number().positive(),
-});
-
-// Main Content Schemas
-export const zEducationalContent = z.object({
-  id: z.string().uuid(),
-  title: z.string(),
-  type: zContentKind,
-  targetAudience: zAudience,
-  subject: z.string(),
-  gradeLevel: z.string(),
-  standard: z.string().optional(),
-  content: z.string(), // markdown body
-  metadata: z.object({
-    duration: z.string().optional(),
-    materials: z.array(z.string()).optional(),
-    objectives: z.array(z.string()).optional(),
-    differentiation: z.array(z.string()).optional(),
-    alignment: z.array(z.object({
-      framework: z.string(),
-      codes: z.array(z.string()),
-    })).optional(),
-  }),
-  generatedAt: z.string().datetime(),
-});
-
-export const zAssessment = z.object({
-  id: z.string().uuid(),
-  title: z.string(),
-  type: z.literal('assessment'),
-  questions: z.array(zAssessmentQuestion),
-  rubric: zRubric.optional(),
-  pointsTotal: z.number().positive(),
-  generatedAt: z.string().datetime(),
-});
-
-export const zRubricContent = zRubric.extend({
-  id: z.string().uuid(),
-  type: z.literal('rubric'),
-  generatedAt: z.string().datetime(),
-});
-
-export const zImageContent = z.object({
-  id: z.string().uuid(),
-  title: z.string(), // This will be the prompt
-  type: z.literal('image'),
-  prompt: z.string(),
-  base64Image: z.string(), // base64 encoded image data
-  generatedAt: z.string().datetime(),
-});
-
-
-// Parser functions/guards
-export const parseEducationalContent = (data: unknown) => {
-  return zEducationalContent.safeParse(data);
-};
-
-export const parseAssessment = (data: unknown) => {
-  return zAssessment.safeParse(data);
-};
-
-export const parseRubricContent = (data: unknown) => {
-    return zRubricContent.safeParse(data);
-}
-
-export const parseImageContent = (data: unknown) => {
-    return zImageContent.safeParse(data);
-}
-
-// FIX: Add inferred types and interfaces to fix import errors across the application.
-// Type definitions inferred from schemas
-export type Audience = z.infer<typeof zAudience>;
-export type ContentKind = z.infer<typeof zContentKind>;
-export type RubricRow = z.infer<typeof zRubricRow>;
-export type Rubric = z.infer<typeof zRubric>;
-export type AssessmentQuestion = z.infer<typeof zAssessmentQuestion>;
-export type EducationalContent = z.infer<typeof zEducationalContent>;
-export type Assessment = z.infer<typeof zAssessment>;
-export type RubricContent = z.infer<typeof zRubricContent>;
-export type ImageContent = z.infer<typeof zImageContent>;
-
-// Other types that are missing
-export interface GenerationParams {
-  audience: Audience;
-  type: ContentKind;
-  subject: string;
-  grade: string;
-  topic: string;
-  standard?: string;
-  objectives?: string[];
-  difficulty?: string;
-  bloomsLevel?: string;
-  differentiationProfiles?: string[];
-  includeRubric?: boolean;
-  associatedRubric?: Rubric | null;
-}
-
-export interface RubricGenerationParams {
+export interface BaseContent {
+  id: string;
   title: string;
-  topic: string;
-  criteria: string[];
-  levels: { label: string; points: number }[];
+  type: ContentType;
+  generatedAt: string; // ISO 8601 timestamp
+}
+
+export interface EducationalContent extends BaseContent {
+  type: 'lesson' | 'activity' | 'resource' | 'printable';
+  targetAudience: 'educator' | 'student' | 'both' | 'seller';
+  subject: string;
+  gradeLevel: string;
+  standard?: string;
+  content: string; // The full content in HTML or Markdown format
+  metadata: {
+    duration?: string;
+    materials?: string[];
+    objectives?: string[];
+    differentiation?: string[];
+  };
+}
+
+export interface RubricLevel {
+  label: string;
+  description: string;
+  points: number;
+}
+
+export interface RubricRow {
+  id: string; // A UUID for the row
+  criterion: string;
+  levels: RubricLevel[];
+}
+
+export interface RubricContent extends BaseContent {
+  type: 'rubric';
+  title: string;
+  rows: RubricRow[];
+}
+
+export interface AssessmentQuestion {
+  id: string; // A UUID for the question
+  type: 'multiple-choice' | 'short-answer' | 'essay' | 'true-false';
+  prompt: string;
+  choices?: string[];
+  answerKey: string | string[];
+  points: number;
+}
+
+export interface Assessment extends BaseContent {
+  type: 'assessment' | 'assessment-questions';
+  subject: string;
+  gradeLevel: string;
+  questions: AssessmentQuestion[];
+  pointsTotal: number;
+  rubric?: RubricContent;
+}
+
+
+export interface ImageContent extends BaseContent {
+  type: 'image';
+  prompt: string;
+  base64Image: string;
 }
 
 export interface EducationalAnalytics {
@@ -137,9 +75,72 @@ export interface EducationalAnalytics {
   userSatisfaction: number;
 }
 
-export type AspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
-export interface ImageGenerationParams {
-    prompt: string;
-    aspectRatio: AspectRatio;
-    style: string;
-}
+// Zod schemas for validation
+
+export const rubricLevelSchema = z.object({
+  label: z.string().min(1),
+  description: z.string().min(1),
+  points: z.number().min(0),
+});
+
+export const rubricRowSchema = z.object({
+  id: z.string().uuid(),
+  criterion: z.string().min(1),
+  levels: z.array(rubricLevelSchema).min(1),
+});
+
+export const rubricContentSchema = z.object({
+  id: z.string().uuid(),
+  type: z.literal('rubric'),
+  title: z.string().min(1),
+  rows: z.array(rubricRowSchema).min(1),
+  generatedAt: z.string().datetime(),
+});
+
+export const assessmentQuestionSchema = z.object({
+  id: z.string().uuid(),
+  type: z.enum(['multiple-choice', 'short-answer', 'essay', 'true-false']),
+  prompt: z.string().min(1),
+  choices: z.array(z.string()).optional(),
+  answerKey: z.union([z.string(), z.array(z.string())]),
+  points: z.number().min(0),
+});
+
+export const assessmentSchema = z.object({
+  id: z.string().uuid(),
+  type: z.enum(['assessment', 'assessment-questions']),
+  title: z.string().min(1),
+  subject: z.string(),
+  gradeLevel: z.string(),
+  questions: z.array(assessmentQuestionSchema).min(1),
+  pointsTotal: z.number().min(0),
+  rubric: rubricContentSchema.optional(),
+  generatedAt: z.string().datetime(),
+});
+
+export const educationalContentSchema = z.object({
+  id: z.string().uuid(),
+  type: z.enum(['lesson', 'activity', 'resource', 'printable']),
+  title: z.string().min(1),
+  targetAudience: z.enum(['educator', 'student', 'both', 'seller']),
+  subject: z.string(),
+  gradeLevel: z.string(),
+  standard: z.string().optional(),
+  content: z.string().min(1),
+  metadata: z.object({
+    duration: z.string().optional(),
+    materials: z.array(z.string()).optional(),
+    objectives: z.array(z.string()).optional(),
+    differentiation: z.array(z.string()).optional(),
+  }),
+  generatedAt: z.string().datetime(),
+});
+
+export const imageContentSchema = z.object({
+    id: z.string().uuid(),
+    type: z.literal('image'),
+    title: z.string().min(1, 'Title is required.'),
+    prompt: z.string().min(1, 'Prompt is required.'),
+    base64Image: z.string(),
+    generatedAt: z.string().datetime(),
+});

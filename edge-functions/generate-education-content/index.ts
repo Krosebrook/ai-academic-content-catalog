@@ -18,13 +18,11 @@ const generationParamsSchema = z.object({
   standard: z.string().optional(),
 });
 
-// FIX: Completed the schema definitions by copying them from geminiService.ts.
+// FIX: Completed the schema definitions for consistent and valid JSON output.
 const lessonPlanSchema = {
     type: Type.OBJECT,
     properties: {
-        id: { type: Type.STRING, description: 'A UUID for the content.' },
         title: { type: Type.STRING },
-        type: { type: Type.STRING, enum: ['lesson'] },
         targetAudience: { type: Type.STRING, enum: ['educator', 'student', 'both', 'seller'] },
         subject: { type: Type.STRING },
         gradeLevel: { type: Type.STRING },
@@ -37,23 +35,23 @@ const lessonPlanSchema = {
                 materials: { type: Type.ARRAY, items: { type: Type.STRING } },
                 objectives: { type: Type.ARRAY, items: { type: Type.STRING } },
                 differentiation: { type: Type.ARRAY, items: { type: Type.STRING } },
-            }
+            },
+            required: ["duration", "materials", "objectives"]
         },
-        generatedAt: { type: Type.STRING, description: 'The ISO 8601 timestamp of generation.' },
-    }
+    },
+    required: ["title", "targetAudience", "subject", "gradeLevel", "content", "metadata"]
 };
 const assessmentSchema = {
     type: Type.OBJECT,
     properties: {
-        id: { type: Type.STRING, description: 'A UUID for the assessment.' },
         title: { type: Type.STRING },
-        type: { type: Type.STRING, enum: ['assessment']},
+        subject: { type: Type.STRING },
+        gradeLevel: { type: Type.STRING },
         questions: {
             type: Type.ARRAY,
             items: {
                 type: Type.OBJECT,
                 properties: {
-                    id: { type: Type.STRING, description: 'A UUID for the question.' },
                     type: { type: Type.STRING, enum: ['multiple-choice', 'short-answer', 'essay', 'true-false'] },
                     prompt: { type: Type.STRING },
                     choices: { type: Type.ARRAY, items: { type: Type.STRING } },
@@ -62,11 +60,12 @@ const assessmentSchema = {
                         description: 'The correct answer. For multiple-choice with multiple answers, provide a JSON string array of the correct choices (e.g., \'["Choice A", "Choice C"]\'). For essay questions, this can be a sample answer or key points. For true/false, it should be "true" or "false".'
                     },
                     points: { type: Type.NUMBER },
-                }
+                },
+                required: ["type", "prompt", "answerKey", "points"]
             }
         },
-        pointsTotal: { type: Type.NUMBER },
-    }
+    },
+    required: ["title", "subject", "gradeLevel", "questions"]
 };
 
 
@@ -94,6 +93,7 @@ Deno.serve(async (req: Request) => {
     if (!API_KEY) {
         throw new Error("Missing GEMINI_API_KEY");
     }
+    // FIX: Corrected GoogleGenAI initialization to use a named `apiKey` parameter.
     const ai = new GoogleGenAI({ apiKey: API_KEY });
 
     const prompt = `

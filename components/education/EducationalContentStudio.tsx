@@ -1,512 +1,258 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
-import ReactMarkdown from 'react-markdown';
-import {
-    GenerationParams, ContentKind, EducationalContent,
-    Assessment, RubricContent, ImageContent, AspectRatio
-} from '../../types/education';
-import {
-    SUBJECTS, GRADE_LEVELS
-} from '../../constants/education';
-import { generateEducationalContent, generateImage, streamedRefineText } from '../../services/geminiService';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { SUBJECTS, GRADE_LEVELS, EDUCATIONAL_STANDARDS, EDUCATIONAL_TOOL_CATEGORIES } from '../../constants/education';
+import { EducationalContent, Assessment, RubricContent, ImageContent } from '../../types/education';
+import { generateEducationalContent, generateAssessment, generateRubric, generateImage } from '../../services/geminiService';
 import { saveContent } from '../../utils/contentStorage';
-import { toMarkdown } from '../../utils/exports';
-
-import FFButton from './shared/FFButton';
 import FFCard from './shared/FFCard';
+import FFButton from './shared/FFButton';
 import ProgressBar from './shared/ProgressBar';
 import ExportMenu from './exports/ExportMenu';
-import RubricBuilderModal from './tools/RubricBuilderModal';
-import SelectRubricModal from './tools/SelectRubricModal';
-
-type GeneratedContent = EducationalContent | Assessment | RubricContent | ImageContent;
-
-// --- Reducer for complex form state management ---
-
-interface StudioFormState {
-    params: GenerationParams;
-    imagePrompt: string;
-    aspectRatio: AspectRatio;
-    imageStyle: string;
-}
-
-const initialFormState: StudioFormState = {
-    params: {
-        audience: 'educator',
-        type: 'lesson',
-        subject: 'Mathematics',
-        grade: '9th Grade',
-        topic: 'Introduction to Algebra',
-    },
-    imagePrompt: '',
-    aspectRatio: '1:1',
-    imageStyle: 'Default',
-};
-
-type StudioFormAction =
-    | { type: 'UPDATE_PARAM'; payload: { field: keyof GenerationParams; value: any } }
-    | { type: 'UPDATE_IMAGE_PARAM'; payload: { field: 'imagePrompt' | 'aspectRatio' | 'imageStyle'; value: string } }
-    | { type: 'SET_TOOL_TYPE'; payload: { type: ContentKind; includeRubric?: boolean } };
-
-function studioFormReducer(state: StudioFormState, action: StudioFormAction): StudioFormState {
-    switch (action.type) {
-        case 'UPDATE_PARAM':
-            return {
-                ...state,
-                params: { ...state.params, [action.payload.field]: action.payload.value },
-            };
-        case 'UPDATE_IMAGE_PARAM':
-            return {
-                ...state,
-                [action.payload.field]: action.payload.value,
-            };
-        case 'SET_TOOL_TYPE':
-            return {
-                ...state,
-                params: {
-                    ...state.params,
-                    type: action.payload.type,
-                    includeRubric: action.payload.includeRubric || false,
-                    associatedRubric: null,
-                },
-            };
-        default:
-            return state;
-    }
-}
-
-
-// --- Sub-components for Interactive Editing ---
-
-const RefinementToolbar: React.FC<{
-    position: { top: number; left: number };
-    onRefine: (instruction: string) => void;
-    onClose: () => void;
-}> = ({ position, onRefine, onClose }) => {
-    const [instruction, setInstruction] = useState('');
-    const ref = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (ref.current && !ref.current.contains(event.target as Node)) {
-                onClose();
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [onClose]);
-
-    const handleRefineClick = () => {
-        if (instruction.trim()) {
-            onRefine(instruction);
-        }
-    };
-
-    return (
-        <div
-            ref={ref}
-            className="absolute z-10 bg-ff-surface p-2 rounded-lg shadow-2xl border border-slate-600 flex gap-2"
-            style={{ top: position.top, left: position.left }}
-            onClick={(e) => e.stopPropagation()}
-        >
-            <input
-                type="text"
-                value={instruction}
-                onChange={(e) => setInstruction(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleRefineClick()}
-                placeholder="e.g., Make this simpler"
-                className="bg-ff-bg-dark border border-slate-700 rounded-md px-2 py-1 text-sm w-48"
-                autoFocus
-            />
-            <FFButton onClick={handleRefineClick} variant="primary" className="py-1 px-3 text-sm">
-                Refine
-            </FFButton>
-        </div>
-    );
-};
-
-const EditableContentViewer: React.FC<{
-    initialContent: string;
-    onContentChange: (newHtml: string) => void;
-}> = ({ initialContent, onContentChange }) => {
-    const editorRef = useRef<HTMLDivElement>(null);
-    const [toolbarState, setToolbarState] = useState<{ top: number; left: number } | null>(null);
-    const selectionRef = useRef<Range | null>(null);
-
-    const handleMouseUp = () => {
-        setTimeout(() => {
-            const selection = window.getSelection();
-            if (selection && !selection.isCollapsed && editorRef.current?.contains(selection.anchorNode)) {
-                const range = selection.getRangeAt(0);
-                selectionRef.current = range;
-                const rect = range.getBoundingClientRect();
-                setToolbarState({
-                    top: rect.top - 50 + window.scrollY,
-                    left: rect.left + window.scrollX,
-                });
-            } else {
-                setToolbarState(null);
-            }
-        }, 10);
-    };
-    
-    const handleRefine = async (instruction: string) => {
-        const range = selectionRef.current;
-        if (!range || !editorRef.current) return;
-    
-        const originalText = range.toString();
-        range.deleteContents();
-        const placeholder = document.createElement('span');
-        placeholder.className = 'text-ff-primary animate-pulse';
-        placeholder.textContent = '[Refining...]';
-        range.insertNode(placeholder);
-        
-        let refinedText = '';
-        try {
-            for await (const chunk of streamedRefineText(instruction, originalText)) {
-                refinedText += chunk;
-                placeholder.textContent = refinedText;
-            }
-        } catch (e) {
-            placeholder.textContent = `[Error] ${originalText}`;
-        } finally {
-             const finalNode = document.createTextNode(placeholder.textContent || '');
-             placeholder.parentNode?.replaceChild(finalNode, placeholder);
-             onContentChange(editorRef.current.innerHTML);
-        }
-        setToolbarState(null);
-    };
-
-    return (
-        <FFCard>
-             {toolbarState && (
-                <RefinementToolbar
-                    position={toolbarState}
-                    onRefine={handleRefine}
-                    onClose={() => setToolbarState(null)}
-                />
-            )}
-            <div
-                ref={editorRef}
-                className="prose prose-invert max-w-none prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg focus:outline-none focus:ring-2 focus:ring-ff-primary rounded-md p-2 -m-2"
-                contentEditable={true}
-                suppressContentEditableWarning={true}
-                onMouseUp={handleMouseUp}
-                onInput={() => onContentChange(editorRef.current?.innerHTML || '')}
-                dangerouslySetInnerHTML={{ __html: initialContent }}
-            />
-        </FFCard>
-    );
-};
-
-
-// --- Content Viewer Component ---
-
-interface ContentViewerProps {
-    content: GeneratedContent;
-    editedBody: string | null;
-    onContentChange: (newHtml: string) => void;
-}
-
-const ContentViewer: React.FC<ContentViewerProps> = ({ content, editedBody, onContentChange }) => {
-    const isEditable = 'content' in content && ['lesson', 'activity', 'resource', 'printable'].includes(content.type);
-
-    if (content.type === 'image') {
-        return (
-            <FFCard>
-                <h2 className="text-xl font-bold mb-4">{content.title}</h2>
-                <img src={`data:image/png;base64,${(content as ImageContent).base64Image}`} alt={content.title} className="rounded-lg w-full" />
-            </FFCard>
-        );
-    }
-
-    if (isEditable && editedBody !== null) {
-        return <EditableContentViewer initialContent={editedBody} onContentChange={onContentChange} />;
-    }
-
-    // Fallback for non-editable content like assessments and rubrics
-    return (
-        <FFCard>
-            <div className="prose prose-invert max-w-none prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg">
-                <ReactMarkdown>{toMarkdown(content as EducationalContent | Assessment | RubricContent)}</ReactMarkdown>
-            </div>
-        </FFCard>
-    );
-};
-
-
-// --- Main Studio Component ---
 
 interface EducationalContentStudioProps {
-  toolSelection: {
-    id: string;
-    name: string;
-    categoryId: string;
-  } | null;
+  toolSelection: { id: string; name: string; categoryId: string; } | null;
 }
 
-const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ toolSelection }) => {
-    const [formState, dispatch] = useReducer(studioFormReducer, initialFormState);
-    
-    const [isLoading, setIsLoading] = useState(false);
-    const [loadingProgress, setLoadingProgress] = useState(0);
-    const [error, setError] = useState<string | null>(null);
-    const [generatedContent, setGeneratedContent] = useState<GeneratedContent | null>(null);
-    
-    const [editedContentBody, setEditedContentBody] = useState<string | null>(null);
-    const [isDirty, setIsDirty] = useState(false);
-
-    const [isRubricBuilderOpen, setIsRubricBuilderOpen] = useState(false);
-    const [isSelectRubricOpen, setIsSelectRubricOpen] = useState(false);
-
-    const isImageTool = useMemo(() => toolSelection?.id === 'pp-09', [toolSelection]);
+const SimpleRichTextEditor: React.FC<{ value: string; onChange: (value: string) => void; }> = ({ value, onChange }) => {
+    const editorRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        if (toolSelection) {
-            setGeneratedContent(null);
-            setError(null);
-            setIsDirty(false);
-            setEditedContentBody(null);
-
-            const typeMap: Record<string, ContentKind> = {
-                'lp-': 'lesson', 'as-': 'assessment', 'sa-': 'resource', 'pp-': 'printable', 'ig-': 'activity'
-            };
-            const prefix = toolSelection.id.substring(0, 3);
-            const newType = typeMap[prefix] || 'resource';
-
-            if (toolSelection.id === 'as-06' || toolSelection.id === 'as-11') {
-                setIsRubricBuilderOpen(true);
-            } else if (toolSelection.id === 'as-03') {
-                dispatch({ type: 'SET_TOOL_TYPE', payload: { type: 'assessment', includeRubric: true } });
-            } else {
-                dispatch({ type: 'SET_TOOL_TYPE', payload: { type: newType } });
-            }
+        if (editorRef.current && value !== editorRef.current.innerHTML) {
+            editorRef.current.innerHTML = value;
         }
-    }, [toolSelection]);
-    
-     useEffect(() => {
-        if (generatedContent && 'content' in generatedContent) {
-            setEditedContentBody((generatedContent as EducationalContent).content);
-            setIsDirty(false);
-        }
-    }, [generatedContent]);
+    }, [value]);
 
-    const handleGenerate = async () => {
-        setIsLoading(true);
-        setError(null);
-        setGeneratedContent(null);
-        setIsDirty(false);
-        setEditedContentBody(null);
-        setLoadingProgress(0);
-
-        const progressInterval = setInterval(() => {
-            setLoadingProgress(old => (old < 90 ? old + 5 : 90));
-        }, 300);
-
-        try {
-            let result;
-            if (isImageTool) {
-                result = await generateImage({
-                    prompt: formState.imagePrompt,
-                    aspectRatio: formState.aspectRatio,
-                    style: formState.imageStyle
-                });
-            } else {
-                result = await generateEducationalContent(formState.params);
-            }
-
-            if (result && 'error' in result) {
-                setError(result.error);
-            } else if (result) {
-                setGeneratedContent(result as GeneratedContent);
-            }
-        } catch (e: any) {
-            setError(e.message || 'An unexpected error occurred.');
-        } finally {
-            clearInterval(progressInterval);
-            setLoadingProgress(100);
-            setTimeout(() => setIsLoading(false), 500);
-        }
-    };
-    
-    const handleContentChange = (newHtml: string) => {
-        setEditedContentBody(newHtml);
-        if (!isDirty) {
-            setIsDirty(true);
-        }
+    const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
+        onChange(e.currentTarget.innerHTML);
     };
 
-    const handleSave = () => {
-        if (!generatedContent) return;
-        let contentToSave = { ...generatedContent };
-        if (isDirty && editedContentBody !== null && 'content' in contentToSave) {
-            (contentToSave as EducationalContent).content = editedContentBody;
-        }
-        saveContent(contentToSave);
-        setGeneratedContent(contentToSave);
-        alert("Content saved to 'My Content'!");
-        setIsDirty(false);
-    };
-    
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Control Panel */}
-            <div className="ff-fade-in-up">
-                <h2 className="text-2xl font-bold mb-1" style={{fontFamily: 'var(--ff-font-primary)'}}>
-                    {toolSelection?.name || 'Content Studio'}
-                </h2>
-                <p className="text-ff-text-secondary mb-6">
-                    {toolSelection ? 'Fill in the details below to generate your content.' : 'Select a tool from the Tools tab to get started.'}
-                </p>
-
-                <FFCard>
-                    {isImageTool ? (
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-400 mb-1">Image Description</label>
-                                <textarea 
-                                    value={formState.imagePrompt} 
-                                    onChange={e => dispatch({ type: 'UPDATE_IMAGE_PARAM', payload: { field: 'imagePrompt', value: e.target.value } })}
-                                    rows={3} 
-                                    className="w-full bg-ff-surface p-2 rounded-md border border-slate-600" 
-                                    placeholder="e.g., A red panda coding on a laptop in a bamboo forest" 
-                                />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-400 mb-1">Style</label>
-                                    <select 
-                                        value={formState.imageStyle} 
-                                        onChange={e => dispatch({ type: 'UPDATE_IMAGE_PARAM', payload: { field: 'imageStyle', value: e.target.value } })}
-                                        className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10">
-                                        {['Default', 'Photorealistic', 'Cartoon', 'Watercolor', 'Fantasy', 'Anime', 'Line Art'].map(s => <option key={s} value={s}>{s}</option>)}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-400 mb-1">Aspect Ratio</label>
-                                    <select 
-                                        value={formState.aspectRatio}
-                                        onChange={e => dispatch({ type: 'UPDATE_IMAGE_PARAM', payload: { field: 'aspectRatio', value: e.target.value as AspectRatio } })}
-                                        className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10">
-                                        <option value="1:1">1:1 (Square)</option>
-                                        <option value="16:9">16:9 (Landscape)</option>
-                                        <option value="9:16">9:16 (Portrait)</option>
-                                        <option value="4:3">4:3 (Standard)</option>
-                                        <option value="3:4">3:4 (Tall)</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-400 mb-1">Subject</label>
-                                    <select value={formState.params.subject} onChange={e => dispatch({ type: 'UPDATE_PARAM', payload: { field: 'subject', value: e.target.value } })} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10">
-                                        {SUBJECTS.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-400 mb-1">Grade Level</label>
-                                    <select value={formState.params.grade} onChange={e => dispatch({ type: 'UPDATE_PARAM', payload: { field: 'grade', value: e.target.value } })} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10">
-                                        {GRADE_LEVELS.map(g => <option key={g} value={g}>{g}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-400 mb-1">Topic / Title</label>
-                                <input type="text" value={formState.params.topic} onChange={e => dispatch({ type: 'UPDATE_PARAM', payload: { field: 'topic', value: e.target.value } })} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600" />
-                            </div>
-                            
-                            {formState.params.includeRubric && (
-                                 <div className="pt-2">
-                                     {formState.params.associatedRubric ? (
-                                         <FFCard>
-                                             <div className="flex justify-between items-center">
-                                                 <div>
-                                                    <p className="text-sm text-green-400">Rubric Attached</p>
-                                                    <p className="font-semibold">{formState.params.associatedRubric.title}</p>
-                                                 </div>
-                                                 <FFButton variant="secondary" onClick={() => dispatch({ type: 'UPDATE_PARAM', payload: { field: 'associatedRubric', value: null } })}>Remove</FFButton>
-                                             </div>
-                                         </FFCard>
-                                     ) : (
-                                         <div className="flex gap-2">
-                                            <FFButton onClick={() => setIsRubricBuilderOpen(true)}>Create New Rubric</FFButton>
-                                            <FFButton onClick={() => setIsSelectRubricOpen(true)}>Select Existing Rubric</FFButton>
-                                         </div>
-                                     )}
-                                 </div>
-                            )}
-
-                        </div>
-                    )}
-
-                    <div className="mt-6">
-                        <FFButton onClick={handleGenerate} disabled={isLoading || !toolSelection || (!isImageTool && !formState.params.topic) || (isImageTool && !formState.imagePrompt)} className="w-full text-lg py-3">
-                            {isLoading ? 'Generating...' : '✨ Generate Content'}
-                        </FFButton>
-                    </div>
-                </FFCard>
-            </div>
-
-            {/* Output Panel */}
-            <div className="ff-fade-in-up" style={{'--fade-delay': '150ms'} as React.CSSProperties}>
-                {isLoading && (
-                    <FFCard>
-                        <div className="text-center p-8">
-                            <h3 className="text-xl font-semibold mb-4">Generating your content...</h3>
-                            <p className="text-ff-text-muted mb-6">The AI is working its magic. This may take a moment.</p>
-                            <ProgressBar value={loadingProgress} />
-                        </div>
-                    </FFCard>
-                )}
-                {error && <FFCard><div className="text-red-400 bg-red-900/50 p-4 rounded-lg">{error}</div></FFCard>}
-                {generatedContent && (
-                    <div className="space-y-4">
-                        <ContentViewer 
-                            content={generatedContent}
-                            editedBody={editedContentBody}
-                            onContentChange={handleContentChange}
-                        />
-                        <div className="flex gap-3">
-                             <FFButton onClick={handleSave} variant="primary" className={isDirty ? 'ff-pulse-glow' : ''}>
-                                {isDirty ? 'Save Changes' : 'Save to My Content'}
-                            </FFButton>
-                        </div>
-                        <ExportMenu content={generatedContent} />
-                    </div>
-                )}
-                {!isLoading && !error && !generatedContent && (
-                     <FFCard>
-                        <div className="text-center p-12 text-ff-text-muted border-2 border-dashed border-slate-700 rounded-lg">
-                            <p>Your generated content will appear here.</p>
-                        </div>
-                     </FFCard>
-                )}
-            </div>
-
-            {isRubricBuilderOpen && (
-                <RubricBuilderModal
-                    initialTitle={formState.params.topic ? `Rubric for ${formState.params.topic}`: ''}
-                    initialTopic={formState.params.topic}
-                    onClose={() => setIsRubricBuilderOpen(false)}
-                    onRubricGenerated={(rubric) => {
-                        dispatch({ type: 'UPDATE_PARAM', payload: { field: 'associatedRubric', value: rubric } });
-                        setIsRubricBuilderOpen(false);
-                    }}
-                />
-            )}
-             {isSelectRubricOpen && (
-                <SelectRubricModal
-                    onClose={() => setIsSelectRubricOpen(false)}
-                    onSelect={(rubric) => {
-                        dispatch({ type: 'UPDATE_PARAM', payload: { field: 'associatedRubric', value: rubric } });
-                        setIsSelectRubricOpen(false);
-                    }}
-                />
-            )}
-        </div>
+        <div 
+            ref={editorRef}
+            contentEditable
+            onInput={handleInput}
+            className="w-full bg-ff-bg-dark border border-slate-600 rounded-lg p-3 h-96 overflow-y-auto"
+            style={{ color: 'var(--ff-text-primary)' }}
+        />
     );
+};
+
+
+const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ toolSelection }) => {
+  const [topic, setTopic] = useState('');
+  const [subject, setSubject] = useState(SUBJECTS[0].id);
+  const [gradeLevel, setGradeLevel] = useState(GRADE_LEVELS[11]);
+  const [standard, setStandard] = useState(EDUCATIONAL_STANDARDS[0]);
+  const [customInstructions, setCustomInstructions] = useState('');
+  
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [generatedContent, setGeneratedContent] = useState<EducationalContent | Assessment | RubricContent | ImageContent | null>(null);
+  const [progress, setProgress] = useState(0);
+  
+  const isImageTool = useMemo(() => toolSelection?.id === 'pp-09', [toolSelection]);
+
+  useEffect(() => {
+    if (toolSelection) {
+      setGeneratedContent(null);
+      setError(null);
+    }
+  }, [toolSelection]);
+  
+  useEffect(() => {
+      let timer: NodeJS.Timeout;
+      if (isLoading) {
+          setProgress(0);
+          timer = setInterval(() => {
+              setProgress(oldProgress => {
+                  if (oldProgress >= 95) {
+                      return 95;
+                  }
+                  const diff = Math.random() * 10;
+                  return Math.min(oldProgress + diff, 95);
+              });
+          }, 800);
+      } else {
+          setProgress(100);
+      }
+      return () => {
+          clearInterval(timer);
+      };
+  }, [isLoading]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!toolSelection) {
+      setError("Please select a tool first.");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setGeneratedContent(null);
+
+    const params = {
+      toolId: toolSelection.id,
+      toolName: toolSelection.name,
+      topic,
+      gradeLevel,
+      subject,
+      standard,
+      customInstructions,
+    };
+    
+    try {
+      let content;
+      const categoryId = toolSelection.categoryId;
+      if (categoryId === 'assessments') {
+          content = await generateAssessment(params);
+      } else if (toolSelection.id === 'as-06' || toolSelection.id === 'as-11') { // Rubric tools
+          content = await generateRubric(params);
+      } else if (isImageTool) {
+          content = await generateImage(topic, `Image for ${subject}: ${topic}`);
+      } else {
+          content = await generateEducationalContent(params);
+      }
+      
+      setGeneratedContent(content);
+      saveContent(content);
+    } catch (err: any) {
+      setError(err.message || 'An unexpected error occurred during content generation.');
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const handleContentChange = (newContent: string) => {
+    if (generatedContent && 'content' in generatedContent) {
+        const updatedContent = {...generatedContent, content: newContent};
+        setGeneratedContent(updatedContent as EducationalContent);
+        saveContent(updatedContent);
+    }
+  };
+
+
+  if (!toolSelection) {
+    return (
+      <div className="text-center py-20 ff-fade-in-up">
+        <h2 style={{ fontFamily: 'var(--ff-font-primary)', fontSize: 'var(--ff-text-2xl)', fontWeight: 'var(--ff-weight-bold)' }}>Welcome to the Studio</h2>
+        <p style={{ color: 'var(--ff-text-muted)', marginTop: 'var(--ff-space-4)' }}>
+          Please select a tool from the 'Tools' tab to begin creating content.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 ff-fade-in-up">
+      {/* Form Panel */}
+      <FFCard>
+        <h2 style={{ fontFamily: 'var(--ff-font-primary)', fontSize: 'var(--ff-text-xl)', fontWeight: 'var(--ff-weight-bold)' }}>
+          {toolSelection.name}
+        </h2>
+        <p style={{ color: 'var(--ff-text-secondary)', marginBottom: 'var(--ff-space-6)' }}>
+            Fill in the details below to generate your content.
+        </p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="topic" className="block text-sm font-medium text-ff-text-secondary mb-1">
+              {isImageTool ? 'Image Prompt / Description' : 'Topic / Title'}
+            </label>
+            <input
+              id="topic"
+              type="text"
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              className="w-full bg-ff-surface p-2 rounded-md border border-slate-600"
+              required
+            />
+          </div>
+
+          {!isImageTool && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="subject" className="block text-sm font-medium text-ff-text-secondary mb-1">Subject</label>
+                  <select id="subject" value={subject} onChange={e => setSubject(e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10">
+                    {SUBJECTS.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="gradeLevel" className="block text-sm font-medium text-ff-text-secondary mb-1">Grade Level</label>
+                  <select id="gradeLevel" value={gradeLevel} onChange={e => setGradeLevel(e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10">
+                    {GRADE_LEVELS.map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="standard" className="block text-sm font-medium text-ff-text-secondary mb-1">Educational Standard (Optional)</label>
+                <select id="standard" value={standard} onChange={e => setStandard(e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10">
+                  {EDUCATIONAL_STANDARDS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="customInstructions" className="block text-sm font-medium text-ff-text-secondary mb-1">Additional Instructions (Optional)</label>
+                <textarea
+                  id="customInstructions"
+                  value={customInstructions}
+                  onChange={(e) => setCustomInstructions(e.target.value)}
+                  rows={3}
+                  className="w-full bg-ff-surface p-2 rounded-md border border-slate-600"
+                  placeholder="e.g., 'Focus on hands-on activities', 'Include a section on historical context'"
+                />
+              </div>
+            </>
+          )}
+
+          <div className="pt-4">
+            <FFButton type="submit" variant="primary" disabled={isLoading} className="w-full">
+              {isLoading ? 'Generating...' : '✨ Generate Content'}
+            </FFButton>
+          </div>
+        </form>
+      </FFCard>
+
+      {/* Output Panel */}
+      <FFCard>
+        <h2 style={{ fontFamily: 'var(--ff-font-primary)', fontSize: 'var(--ff-text-xl)', fontWeight: 'var(--ff-weight-bold)', marginBottom: 'var(--ff-space-4)' }}>
+          Generated Output
+        </h2>
+        {isLoading && (
+          <div className="space-y-4">
+            <p className="text-ff-text-secondary">AI is thinking... Please wait a moment.</p>
+            <ProgressBar value={progress} />
+          </div>
+        )}
+        {error && <div className="p-4 bg-red-900/50 text-red-300 border border-red-700 rounded-lg">{error}</div>}
+        
+        {generatedContent && (
+            <div className="ff-fade-in-up">
+                {generatedContent.type === 'image' ? (
+                     <img src={`data:image/png;base64,${generatedContent.base64Image}`} alt={generatedContent.title} className="rounded-lg mb-4" />
+                ) : 'content' in generatedContent ? (
+                    <SimpleRichTextEditor value={generatedContent.content} onChange={handleContentChange} />
+                ) : 'questions' in generatedContent ? (
+                    <div className="prose prose-invert max-w-none text-ff-text-primary">
+                        <h3>{generatedContent.title}</h3>
+                        <ol>
+                            {generatedContent.questions.map(q => <li key={q.id}>{q.prompt} ({q.points} pts)</li>)}
+                        </ol>
+                    </div>
+                ): null}
+                <ExportMenu content={generatedContent} />
+            </div>
+        )}
+        
+        {!isLoading && !error && !generatedContent && (
+          <div className="text-center py-10">
+            <p className="text-ff-text-muted">Your generated content will appear here.</p>
+          </div>
+        )}
+      </FFCard>
+    </div>
+  );
 };
 
 export default EducationalContentStudio;
