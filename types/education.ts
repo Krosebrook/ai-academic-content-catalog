@@ -1,3 +1,4 @@
+
 import { z } from 'zod';
 
 export type ContentType = 'lesson' | 'activity' | 'resource' | 'printable' | 'assessment' | 'rubric' | 'image' | 'assessment-questions';
@@ -8,6 +9,12 @@ export interface BaseContent {
   type: ContentType;
   generatedAt: string; // ISO 8601 timestamp
   toolId: string;
+  collectionId?: string;
+}
+
+export interface Source {
+    uri: string;
+    title: string;
 }
 
 export interface EducationalContent extends BaseContent {
@@ -23,6 +30,7 @@ export interface EducationalContent extends BaseContent {
     objectives?: string[];
     differentiation?: string[];
   };
+  sources?: Source[];
 }
 
 export interface RubricLevel {
@@ -59,6 +67,7 @@ export interface Assessment extends BaseContent {
   questions: AssessmentQuestion[];
   pointsTotal: number;
   rubric?: RubricContent;
+  sources?: Source[];
 }
 
 
@@ -77,6 +86,10 @@ export interface EducationalAnalytics {
 }
 
 // Zod schemas for validation
+const sourceSchema = z.object({
+  uri: z.string().url(),
+  title: z.string(),
+});
 
 export const rubricLevelSchema = z.object({
   label: z.string().min(1),
@@ -97,6 +110,7 @@ export const rubricContentSchema = z.object({
   rows: z.array(rubricRowSchema).min(1),
   generatedAt: z.string().datetime(),
   toolId: z.string(),
+  collectionId: z.string().uuid().optional(),
 });
 
 export const assessmentQuestionSchema = z.object({
@@ -119,6 +133,8 @@ export const assessmentSchema = z.object({
   rubric: rubricContentSchema.optional(),
   generatedAt: z.string().datetime(),
   toolId: z.string(),
+  collectionId: z.string().uuid().optional(),
+  sources: z.array(sourceSchema).optional(),
 });
 
 export const educationalContentSchema = z.object({
@@ -138,6 +154,8 @@ export const educationalContentSchema = z.object({
   }),
   generatedAt: z.string().datetime(),
   toolId: z.string(),
+  collectionId: z.string().uuid().optional(),
+  sources: z.array(sourceSchema).optional(),
 });
 
 export const imageContentSchema = z.object({
@@ -148,4 +166,5 @@ export const imageContentSchema = z.object({
     base64Image: z.string(),
     generatedAt: z.string().datetime(),
     toolId: z.string(),
+    collectionId: z.string().uuid().optional(),
 });

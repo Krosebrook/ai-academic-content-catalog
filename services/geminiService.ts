@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -5,12 +6,14 @@ import {
   Assessment,
   RubricContent,
   ImageContent,
+  Source,
   educationalContentSchema,
   assessmentSchema,
   rubricContentSchema,
   imageContentSchema,
   rubricRowSchema
 } from '../types/education';
+import { getPersona } from '../utils/settingsStorage';
 import { z } from 'zod';
 
 // According to guidelines, API key must come from process.env.API_KEY
@@ -107,39 +110,77 @@ export interface GenerationParams {
   subject: string;
   standard?: string;
   customInstructions?: string;
+  useGrounding?: boolean;
   [key: string]: any; // for other params
 }
 
-// FIX: Updated the generic signature to use `z.infer` for robust type inference from the Zod schema.
-// This resolves property access errors on the returned object by ensuring `generatedData` is strongly typed.
-async function generateAndValidate<S extends z.ZodType<any>>(prompt: string, schemaForApi: any, zodSchema: S, model: string = 'gemini-2.5-flash'): Promise<z.infer<S>> {
+async function generateAndValidate<S extends z.ZodType<any>>(
+    prompt: string, 
+    schemaForApi: any, 
+    zodSchema: S, 
+    useGrounding: boolean, 
+    model: string = 'gemini-2.5-flash'
+): Promise<{ data: z.infer<S>; sources?: Source[] }> {
+    
+    const persona = getPersona();
+    const config: any = {};
+    if (persona) {
+        config.systemInstruction = persona;
+    }
+
+    if (useGrounding) {
+        config.tools = [{googleSearch: {}}];
+    } else {
+        config.responseMimeType = 'application/json';
+        config.responseSchema = schemaForApi;
+    }
+
     const response = await ai.models.generateContent({
         model: model,
         contents: prompt,
-        config: {
-            responseMimeType: 'application/json',
-            responseSchema: schemaForApi,
-        },
+        config: config,
     });
 
     const jsonText = response.text;
-    const parsedJson = JSON.parse(jsonText);
+    
+    // Attempt to find and parse a JSON object from the response text
+    const jsonMatch = jsonText.match(/```json\n([\s\S]*?)\n```|({[\s\S]*})/);
+    if (!jsonMatch) {
+      throw new Error("Could not find a valid JSON object in the API response.");
+    }
+    const parsableText = jsonMatch[1] || jsonMatch[2];
+    const parsedJson = JSON.parse(parsableText);
 
-    // Validate with Zod
     const validationResult = zodSchema.safeParse(parsedJson);
     if (!validationResult.success) {
         console.error("Zod validation failed:", validationResult.error.flatten());
         throw new Error("Received invalid data structure from API.");
     }
 
-    return validationResult.data;
+    let sources: Source[] | undefined;
+    if (useGrounding) {
+        const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+        if (groundingChunks) {
+            sources = groundingChunks
+                .map((chunk: any) => ({
+                    uri: chunk.web?.uri,
+                    title: chunk.web?.title,
+                }))
+                .filter((s: any) => s.uri && s.title);
+        }
+    }
+
+    return { data: validationResult.data, sources };
 }
+
 
 export const generateEducationalContent = async (params: GenerationParams): Promise<EducationalContent> => {
     const prompt = `
         You are an expert curriculum designer. Generate a high-quality educational resource based on the following specifications.
         The output must be a single JSON object that strictly adheres to the provided schema.
         The main 'content' field should be formatted as rich HTML.
+        
+        ${params.useGrounding ? 'Use your knowledge and the provided search results to create an accurate and informative response.' : ''}
 
         Tool: ${params.toolName}
         Topic: ${params.topic}
@@ -151,12 +192,14 @@ export const generateEducationalContent = async (params: GenerationParams): Prom
 
     const type: EducationalContent['type'] = params.toolId.startsWith('lp-') ? 'lesson' : params.toolId.startsWith('pp-') ? 'printable' : 'activity';
 
-    const generatedData = await generateAndValidate(prompt, lessonPlanSchemaForAPI, educationalContentSchema.omit({ id: true, type: true, generatedAt: true, toolId: true }));
+    const zodSchema = educationalContentSchema.omit({ id: true, type: true, generatedAt: true, toolId: true, collectionId: true, sources: true });
+    const { data, sources } = await generateAndValidate(prompt, lessonPlanSchemaForAPI, zodSchema, !!params.useGrounding);
 
     const result: EducationalContent = {
-        ...generatedData,
+        ...data,
         id: uuidv4(),
         type: type,
+        sources: sources,
         generatedAt: new Date().toISOString(),
         toolId: params.toolId,
     };
@@ -170,6 +213,8 @@ export const generateAssessment = async (params: GenerationParams): Promise<Asse
         You are an expert assessment creator. Generate a high-quality assessment based on the following specifications.
         The output must be a single JSON object that strictly adheres to the provided schema.
         For multiple choice questions with multiple correct answers, the answerKey should be a JSON string array.
+        
+        ${params.useGrounding ? 'Use your knowledge and the provided search results to create accurate and relevant questions.' : ''}
 
         Tool: ${params.toolName}
         Topic: ${params.topic}
@@ -192,11 +237,11 @@ export const generateAssessment = async (params: GenerationParams): Promise<Asse
         }))
     });
 
-    const generatedData = await generateAndValidate(prompt, assessmentSchemaForAPI, apiResponseSchema);
+    const { data, sources } = await generateAndValidate(prompt, assessmentSchemaForAPI, apiResponseSchema, !!params.useGrounding);
 
     // Post-process answer keys and calculate total points
     let pointsTotal = 0;
-    const questions = generatedData.questions.map((q) => {
+    const questions = data.questions.map((q) => {
         pointsTotal += q.points;
         let answerKey: string | string[] = q.answerKey;
         if (q.type === 'multiple-choice' && typeof q.answerKey === 'string' && q.answerKey.startsWith('[')) {
@@ -208,11 +253,12 @@ export const generateAssessment = async (params: GenerationParams): Promise<Asse
     });
 
     const result: Assessment = {
-        ...generatedData,
+        ...data,
         id: uuidv4(),
         type: 'assessment' as const,
         questions,
         pointsTotal,
+        sources: sources,
         generatedAt: new Date().toISOString(),
         toolId: params.toolId,
     };
@@ -232,17 +278,17 @@ export const generateRubric = async (params: GenerationParams): Promise<RubricCo
         ${params.customInstructions ? `Additional Instructions: ${params.customInstructions}` : ''}
     `;
     
-    const apiResponseSchema = rubricContentSchema.omit({id: true, type: true, generatedAt: true, toolId: true}).extend({
+    const apiResponseSchema = rubricContentSchema.omit({id: true, type: true, generatedAt: true, toolId: true, collectionId: true}).extend({
         rows: z.array(rubricRowSchema.omit({id: true}))
     });
 
-    const generatedData = await generateAndValidate(prompt, rubricSchemaForAPI, apiResponseSchema);
+    const { data } = await generateAndValidate(prompt, rubricSchemaForAPI, apiResponseSchema, false);
 
     const result: RubricContent = {
-        ...generatedData,
+        ...data,
         id: uuidv4(),
         type: 'rubric',
-        rows: generatedData.rows.map((r) => ({...r, id: uuidv4()})),
+        rows: data.rows.map((r) => ({...r, id: uuidv4()})),
         generatedAt: new Date().toISOString(),
         toolId: params.toolId,
     };

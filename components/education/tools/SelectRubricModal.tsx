@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { RubricContent } from '../../../types/education';
 import { loadContent } from '../../../utils/contentStorage';

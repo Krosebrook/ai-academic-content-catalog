@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { EducationalContent, Assessment, RubricContent, ImageContent } from '../../../types/education';
 import { toMarkdown, toJSON, toCSVFlashcards, toDocxTextOutline, toPptOutlineText } from '../../../utils/exports';
@@ -10,15 +11,19 @@ interface ExportMenuProps {
 const ExportMenu: React.FC<ExportMenuProps> = ({ content }) => {
   if (!content) return null;
 
-  const handleExport = (format: 'md' | 'json' | 'csv' | 'docx' | 'ppt' | 'png') => {
+  const handleExport = (format: 'md' | 'json' | 'csv' | 'docx' | 'ppt' | 'png', studentView: boolean = false) => {
     let data = '';
     let filename = `${content.title.replace(/\s/g, '_')}`;
     let mimeType = 'text/plain';
     let blob: Blob;
+    
+    if (studentView) {
+        filename += '_student_version';
+    }
 
     switch (format) {
       case 'md':
-        data = toMarkdown(content);
+        data = toMarkdown(content, studentView);
         filename += '.md';
         mimeType = 'text/markdown';
         break;
@@ -28,14 +33,14 @@ const ExportMenu: React.FC<ExportMenuProps> = ({ content }) => {
         mimeType = 'application/json';
         break;
       case 'csv':
-        if (content.type === 'assessment') {
-          data = toCSVFlashcards(content);
+        if (content.type === 'assessment' || content.type === 'assessment-questions') {
+          data = toCSVFlashcards(content as Assessment);
           filename += '_flashcards.csv';
           mimeType = 'text/csv';
         }
         break;
       case 'docx':
-        data = toDocxTextOutline(content);
+        data = toDocxTextOutline(content, studentView);
         filename += '.txt';
         break;
       case 'ppt':
@@ -87,9 +92,12 @@ const ExportMenu: React.FC<ExportMenuProps> = ({ content }) => {
         ) : (
             <>
                 <FFButton variant="secondary" onClick={() => handleExport('md')}>Markdown</FFButton>
+                { (content.type === 'assessment' || content.type === 'assessment-questions') && 
+                    <FFButton variant="accent" onClick={() => handleExport('md', true)}>Student Version (MD)</FFButton> 
+                }
                 <FFButton variant="secondary" onClick={() => handleExport('docx')}>Docx Outline</FFButton>
                 {content.type === 'lesson' && <FFButton variant="secondary" onClick={() => handleExport('ppt')}>PPT Outline</FFButton>}
-                {content.type === 'assessment' && <FFButton variant="secondary" onClick={() => handleExport('csv')}>CSV Flashcards</FFButton>}
+                {(content.type === 'assessment' || content.type === 'assessment-questions') && <FFButton variant="secondary" onClick={() => handleExport('csv')}>CSV Flashcards</FFButton>}
             </>
         )}
         <FFButton variant="secondary" onClick={() => handleExport('json')}>JSON</FFButton>

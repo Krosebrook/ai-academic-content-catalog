@@ -1,3 +1,4 @@
+
 import React, { useState, Suspense, lazy } from 'react';
 import EducationalContentStudio from '../education/EducationalContentStudio';
 import MyContentPanel from '../education/MyContentPanel';
@@ -5,7 +6,7 @@ import EducationalToolsRouter from '../education/EducationalToolsRouter';
 import { EducationalContent, Assessment, RubricContent, ImageContent } from '../../types/education';
 import { EDUCATIONAL_TOOL_CATEGORIES } from '../../constants/education';
 
-type Tab = 'studio' | 'my-content' | 'tools' | 'analytics';
+type Tab = 'studio' | 'my-content' | 'tools' | 'analytics' | 'settings';
 
 interface ToolSelection {
   id: string;
@@ -16,6 +17,7 @@ interface ToolSelection {
 type StorableContent = EducationalContent | Assessment | RubricContent | ImageContent;
 
 const EducationAnalyticsPanel = lazy(() => import('../education/analytics/EducationAnalyticsPanel'));
+const SettingsPanel = lazy(() => import('../education/SettingsPanel'));
 
 const EducationPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('studio');
@@ -27,6 +29,7 @@ const EducationPage: React.FC = () => {
     { id: 'my-content', label: 'My Content' },
     { id: 'tools', label: 'Tools' },
     { id: 'analytics', label: 'Analytics' },
+    { id: 'settings', label: 'Settings' },
   ];
 
   const handleSelectTool = (tool: ToolSelection) => {
@@ -82,6 +85,12 @@ const EducationPage: React.FC = () => {
         return (
           <Suspense fallback={<div className="p-8 text-center">Loading Analytics...</div>}>
             <EducationAnalyticsPanel />
+          </Suspense>
+        );
+      case 'settings':
+         return (
+          <Suspense fallback={<div className="p-8 text-center">Loading Settings...</div>}>
+            <SettingsPanel />
           </Suspense>
         );
       default:

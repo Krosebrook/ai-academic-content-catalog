@@ -1,3 +1,4 @@
+
 import { EducationalContent, Assessment, RubricContent, ImageContent, AssessmentQuestion, RubricRow } from '../types/education';
 
 type ExportableContent = EducationalContent | Assessment | RubricContent | ImageContent;
@@ -18,14 +19,18 @@ const stripHtml = (html: string): string => {
 };
 
 
-const formatQuestionForExport = (q: AssessmentQuestion, index: number): string => {
+const formatQuestionForExport = (q: AssessmentQuestion, index: number, studentView: boolean = false): string => {
     let text = `${index + 1}. **(${q.points} pts) ${q.prompt}**\n`;
     if (q.type === 'multiple-choice' && q.choices) {
         q.choices.forEach((choice, i) => {
             text += `   ${String.fromCharCode(65 + i)}. ${choice}\n`;
         });
     }
-    text += `\n*Answer: ${Array.isArray(q.answerKey) ? q.answerKey.join(', ') : q.answerKey}*\n\n`;
+    if (!studentView) {
+        text += `\n*Answer: ${Array.isArray(q.answerKey) ? q.answerKey.join(', ') : q.answerKey}*\n\n`;
+    } else {
+        text += '\n';
+    }
     return text;
 };
 
@@ -44,7 +49,7 @@ const formatRubricForExport = (rubric: { title: string, rows: RubricRow[] }): st
     return text;
 };
 
-export const toMarkdown = (content: ExportableContent): string => {
+export const toMarkdown = (content: ExportableContent, studentView: boolean = false): string => {
     let md = `# ${content.title}\n\n`;
 
     switch (content.type) {
@@ -68,12 +73,13 @@ export const toMarkdown = (content: ExportableContent): string => {
             break;
         
         case 'assessment':
+        case 'assessment-questions':
             const assessment = content as Assessment;
             md += `**Total Points:** ${assessment.pointsTotal}\n\n---\n\n`;
             assessment.questions.forEach((q, i) => {
-                md += formatQuestionForExport(q, i);
+                md += formatQuestionForExport(q, i, studentView);
             });
-            if (assessment.rubric) {
+            if (assessment.rubric && !studentView) {
                 md += `\n\n---\n\n${formatRubricForExport(assessment.rubric)}`;
             }
             break;
@@ -105,7 +111,7 @@ export const toCSVFlashcards = (content: Assessment): string => {
     return headers + rows;
 };
 
-export const toDocxTextOutline = (content: ExportableContent): string => {
+export const toDocxTextOutline = (content: ExportableContent, studentView: boolean = false): string => {
     // A simpler version of markdown for copy-pasting
     let text = `${content.title}\n\n`;
      switch (content.type) {
@@ -124,12 +130,15 @@ export const toDocxTextOutline = (content: ExportableContent): string => {
             break;
         
         case 'assessment':
+        case 'assessment-questions':
             const assessment = content as Assessment;
             text += `Total Points: ${assessment.pointsTotal}\n\n`;
             assessment.questions.forEach((q, i) => {
                 text += `${i + 1}. (${q.points} pts) ${q.prompt}\n`;
                 if(q.choices) text += q.choices.join('\n') + '\n';
-                text += `Answer: ${Array.isArray(q.answerKey) ? q.answerKey.join(', ') : q.answerKey}\n\n`;
+                if (!studentView) {
+                    text += `Answer: ${Array.isArray(q.answerKey) ? q.answerKey.join(', ') : q.answerKey}\n\n`;
+                }
             });
             break;
         
