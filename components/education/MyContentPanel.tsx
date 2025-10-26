@@ -92,7 +92,10 @@ const MyContentPanel: React.FC = () => {
         }
     }
 
-    const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replace('-', ' ');
+    const capitalize = (s: string) => {
+        if (!s) return '';
+        return s.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+    };
 
     return (
         <div className="ff-fade-in-up">

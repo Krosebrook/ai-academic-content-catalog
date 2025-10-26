@@ -2,7 +2,9 @@ import { EducationalContent, Assessment, RubricContent, ImageContent } from '../
 
 const STORAGE_KEY = 'flashfusion_ai_content';
 
-export const loadContent = (): (EducationalContent | Assessment | RubricContent | ImageContent)[] => {
+type StorableContent = EducationalContent | Assessment | RubricContent | ImageContent;
+
+export const loadContent = (): StorableContent[] => {
   try {
     const storedContent = localStorage.getItem(STORAGE_KEY);
     if (storedContent) {
@@ -14,13 +16,23 @@ export const loadContent = (): (EducationalContent | Assessment | RubricContent 
   return [];
 };
 
-export const saveContent = (newContent: EducationalContent | Assessment | RubricContent | ImageContent): void => {
+export const saveContent = (contentToSave: StorableContent): void => {
   try {
     const existingContent = loadContent();
-    // Prepend new content to show it at the top
-    const updatedContent = [newContent, ...existingContent];
+    const index = existingContent.findIndex(item => item.id === contentToSave.id);
+
+    let updatedContent: StorableContent[];
+
+    if (index !== -1) {
+      // This is an update. Replace the item at its original position.
+      updatedContent = [...existingContent];
+      updatedContent[index] = contentToSave;
+    } else {
+      // This is a new item. Prepend it to show at the top.
+      updatedContent = [contentToSave, ...existingContent];
+    }
+
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedContent));
-    // FIX: Added curly braces to the catch block to correctly scope the error variable.
   } catch (error) {
     console.error("Failed to save content to localStorage", error);
   }

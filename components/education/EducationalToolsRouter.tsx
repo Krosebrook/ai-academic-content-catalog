@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo } from 'react';
 import { EDUCATIONAL_TOOL_CATEGORIES } from '../../constants/education';
 import FFCard from './shared/FFCard';
@@ -34,6 +35,7 @@ const CategoryIcons: Record<string, React.ReactNode> = {
     'interactive': <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" /></svg>,
     'printables': <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>,
     'language': <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2h1a2 2 0 002-2v-1a2 2 0 012-2h1.945M7.7 9.9a.5.5 0 01.5.5v2.2a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-2.2a.5.5 0 01.5-.5h1zM15.3 9.9a.5.5 0 01.5.5v2.2a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-2.2a.5.5 0 01.5-.5h1zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+    'seller-professional': <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 14.15v4.098a2.25 2.25 0 01-2.25 2.25h-12a2.25 2.25 0 01-2.25-2.25v-4.098m16.5 0a2.25 2.25 0 00-2.25-2.25h-12a2.25 2.25 0 00-2.25 2.25m16.5 0v-4.098a2.25 2.25 0 00-2.25-2.25h-12a2.25 2.25 0 00-2.25 2.25v4.098" /></svg>,
 };
 
 interface EducationalToolsRouterProps {

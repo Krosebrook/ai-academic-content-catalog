@@ -1,118 +1,161 @@
-import { EducationalContent, Assessment, RubricContent, ImageContent } from '../types/education';
+import { EducationalContent, Assessment, RubricContent, ImageContent, AssessmentQuestion, RubricRow } from '../types/education';
 
-export function toMarkdown(content: EducationalContent | Assessment | RubricContent | ImageContent): string {
-  if (content.type === 'image') {
-    const image = content as ImageContent;
-    return `## ${image.title}\n\n![Generated Image: ${image.prompt}](data:image/png;base64,${image.base64Image})`;
-  }
+type ExportableContent = EducationalContent | Assessment | RubricContent | ImageContent;
 
-  if (content.type === 'rubric') {
-    const rubric = content as RubricContent;
-    let md = `# Rubric: ${rubric.title}\n\n`;
-    md += `**Total Points:** ${rubric.pointsTotal}\n\n`;
-    
-    // Create header row
-    const headers = ['Criterion', ...rubric.rows[0].levels.map(l => `${l.label} (${l.points} pts)`)];
-    md += `| ${headers.join(' | ')} |\n`;
-    md += `| ${headers.map(() => '---').join(' | ')} |\n`;
+const stripHtml = (html: string): string => {
+    if (!html) return '';
+    // A more robust implementation to convert basic HTML to readable text.
+    // Adds newlines for block elements before stripping all tags.
+    let text = html;
+    text = text.replace(/<\/h[1-6]>/gi, '\n\n');
+    text = text.replace(/<\/p>/gi, '\n');
+    text = text.replace(/<br\s*\/?>/gi, '\n');
+    text = text.replace(/<\/li>/gi, '\n');
+    text = text.replace(/<[^>]*>?/gm, '');
+    // Replace multiple newlines with a maximum of two
+    text = text.replace(/\n\s*\n\s*\n/g, '\n\n');
+    return text.trim();
+};
 
-    // Create content rows
-    rubric.rows.forEach(row => {
-      const cells = [row.criterion, ...row.levels.map(l => l.description.replace(/\n/g, '<br>'))];
-      md += `| ${cells.join(' | ')} |\n`;
-    });
 
-    return md;
-  }
-  
-  if (content.type === 'assessment' && 'questions' in content) {
-    const assessment = content as Assessment;
-    let md = `# ${assessment.title}\n\n`;
-    md += `## Questions (${assessment.pointsTotal} points)\n\n`;
-    assessment.questions.forEach((q, index) => {
-        md += `**${index + 1}. (${q.points} pts) ${q.prompt}**\n\n`;
-        if (q.type === 'multiple-choice' && q.choices) {
-            q.choices.forEach(choice => md += `- ${choice}\n`);
-        }
-        const answer = Array.isArray(q.answerKey) ? q.answerKey.join(', ') : q.answerKey;
-        md += `\n*Answer Key: ${answer}*\n\n`;
-    });
-    if (assessment.rubric) {
-        md += `## Rubric\n\n`;
-        assessment.rubric.rows.forEach(row => {
-            md += `### ${row.criterion}\n`;
-            row.levels.forEach(level => md += `- **${level.label} (${level.points} pts):** ${level.description}\n`);
-            md += `\n`;
+const formatQuestionForExport = (q: AssessmentQuestion, index: number): string => {
+    let text = `${index + 1}. **(${q.points} pts) ${q.prompt}**\n`;
+    if (q.type === 'multiple-choice' && q.choices) {
+        q.choices.forEach((choice, i) => {
+            text += `   ${String.fromCharCode(65 + i)}. ${choice}\n`;
         });
     }
-    return md;
-  } else {
-    const educationalContent = content as EducationalContent;
-    let md = `# ${educationalContent.title}\n\n`;
-    md += `**Subject:** ${educationalContent.subject}\n`;
-    md += `**Grade Level:** ${educationalContent.gradeLevel}\n\n`;
-    md += `## Metadata\n`;
-    if (educationalContent.metadata.duration) md += `- **Duration:** ${educationalContent.metadata.duration}\n`;
-    if (educationalContent.metadata.objectives) md += `- **Objectives:**\n${educationalContent.metadata.objectives.map(o => `  - ${o}`).join('\n')}\n`;
-    md += `\n---\n\n`;
-    md += educationalContent.content;
-    return md;
-  }
-}
+    text += `\n*Answer: ${Array.isArray(q.answerKey) ? q.answerKey.join(', ') : q.answerKey}*\n\n`;
+    return text;
+};
 
-export function toJSON(content: EducationalContent | Assessment | RubricContent | ImageContent): string {
-  return JSON.stringify(content, null, 2);
-}
+const formatRubricForExport = (rubric: { title: string, rows: RubricRow[] }): string => {
+    let text = `## Rubric: ${rubric.title}\n\n`;
+    if (!rubric.rows || rubric.rows.length === 0) return text;
 
-export function toCSVFlashcards(assessment: Assessment): string {
-  const headers = '"Front (Prompt)","Back (Answer)"\n';
-  const rows = assessment.questions
-    .filter(q => q.type === 'multiple-choice' || q.type === 'short-answer' || q.type === 'true-false')
-    .map(q => {
-      const front = q.prompt.replace(/"/g, '""');
-      const back = (q.answerKey ?? '').toString().replace(/"/g, '""');
-      return `"${front}","${back}"`;
-    })
-    .join('\n');
-  return headers + rows;
-}
+    const headers = ['Criterion', ...rubric.rows[0].levels.map(l => `${l.label} (${l.points} pts)`)];
+    text += `| ${headers.join(' | ')} |\n`;
+    text += `| ${headers.map(() => '---').join(' | ')} |\n`;
 
-export function toDocxTextOutline(content: EducationalContent | Assessment | RubricContent | ImageContent): string {
-  const md = toMarkdown(content);
-  // Simple conversion for text outline: remove markdown formatting
-  return md
-    .replace(/^#+\s/gm, '') // remove headers
-    .replace(/(\*\*|__)(.*?)\1/g, '$2') // remove bold
-    .replace(/(\*|_)(.*?)\1/g, '$2') // remove italic
-    .replace(/^-+\s*$/gm, '\n------------------------------------\n'); // standardize rule lines
-}
-
-export function toPptOutlineText(content: EducationalContent): string {
-  let outline = `Slide 1: Title\n- ${content.title}\n- ${content.subject} | ${content.gradeLevel}\n\n`;
-  
-  if (content.metadata.objectives) {
-    outline += `Slide 2: Learning Objectives\n`;
-    content.metadata.objectives.forEach(obj => {
-      outline += `- ${obj}\n`;
+    rubric.rows.forEach(row => {
+        const cells = [row.criterion, ...row.levels.map(l => l.description.replace(/\n/g, '<br>'))];
+        text += `| ${cells.join(' | ')} |\n`;
     });
-    outline += '\n';
-  }
+    return text;
+};
 
-  // Attempt to split content by headers to create slides
-  const sections = content.content.split(/\n(?=##\s)/);
-  let slideNum = 3;
-  sections.forEach(section => {
-    const lines = section.split('\n');
-    const title = lines[0].replace(/##\s/, '').trim();
-    outline += `Slide ${slideNum}: ${title}\n`;
-    lines.slice(1).forEach(line => {
-      if (line.trim().startsWith('-') || line.trim().startsWith('*')) {
-        outline += `${line.trim()}\n`;
-      }
+export const toMarkdown = (content: ExportableContent): string => {
+    let md = `# ${content.title}\n\n`;
+
+    switch (content.type) {
+        case 'lesson':
+        case 'activity':
+        case 'resource':
+        case 'printable':
+            const eduContent = content as EducationalContent;
+            md += `**Subject:** ${eduContent.subject} | **Grade Level:** ${eduContent.gradeLevel}\n\n`;
+            if (eduContent.standard) {
+                md += `**Standard:** ${eduContent.standard}\n\n`;
+            }
+            if (eduContent.metadata.objectives && eduContent.metadata.objectives.length > 0) {
+                md += `### Learning Objectives\n- ${eduContent.metadata.objectives.join('\n- ')}\n\n`;
+            }
+            if (eduContent.metadata.materials && eduContent.metadata.materials.length > 0) {
+                md += `### Materials\n- ${eduContent.metadata.materials.join('\n- ')}\n\n`;
+            }
+            // Since the content can now be HTML from the editor, strip it for clean markdown export.
+            md += `--- \n\n${stripHtml(eduContent.content)}`;
+            break;
+        
+        case 'assessment':
+            const assessment = content as Assessment;
+            md += `**Total Points:** ${assessment.pointsTotal}\n\n---\n\n`;
+            assessment.questions.forEach((q, i) => {
+                md += formatQuestionForExport(q, i);
+            });
+            if (assessment.rubric) {
+                md += `\n\n---\n\n${formatRubricForExport(assessment.rubric)}`;
+            }
+            break;
+
+        case 'rubric':
+            md += formatRubricForExport(content as RubricContent);
+            break;
+        
+        case 'image':
+            md += `Image Prompt: "${(content as ImageContent).prompt}"\n\n (Image data is not included in Markdown export.)`;
+            break;
+    }
+
+    return md;
+};
+
+export const toJSON = (content: ExportableContent): string => {
+    return JSON.stringify(content, null, 2);
+};
+
+export const toCSVFlashcards = (content: Assessment): string => {
+    const headers = '"Prompt","Answer"\n';
+    const rows = content.questions.map(q => {
+        const prompt = `"${q.prompt.replace(/"/g, '""')}"`;
+        const answer = Array.isArray(q.answerKey) ? q.answerKey.join('; ') : q.answerKey;
+        const answerStr = `"${String(answer).replace(/"/g, '""')}"`;
+        return `${prompt},${answerStr}`;
+    }).join('\n');
+    return headers + rows;
+};
+
+export const toDocxTextOutline = (content: ExportableContent): string => {
+    // A simpler version of markdown for copy-pasting
+    let text = `${content.title}\n\n`;
+     switch (content.type) {
+        case 'lesson':
+        case 'activity':
+        case 'resource':
+        case 'printable':
+            const eduContent = content as EducationalContent;
+            text += `Subject: ${eduContent.subject}\nGrade Level: ${eduContent.gradeLevel}\n`;
+            if (eduContent.standard) text += `Standard: ${eduContent.standard}\n`;
+            text += '\n';
+            if (eduContent.metadata.objectives && eduContent.metadata.objectives.length > 0) {
+                text += `Learning Objectives:\n- ${eduContent.metadata.objectives.join('\n- ')}\n\n`;
+            }
+            text += stripHtml(eduContent.content); // Use stripped content
+            break;
+        
+        case 'assessment':
+            const assessment = content as Assessment;
+            text += `Total Points: ${assessment.pointsTotal}\n\n`;
+            assessment.questions.forEach((q, i) => {
+                text += `${i + 1}. (${q.points} pts) ${q.prompt}\n`;
+                if(q.choices) text += q.choices.join('\n') + '\n';
+                text += `Answer: ${Array.isArray(q.answerKey) ? q.answerKey.join(', ') : q.answerKey}\n\n`;
+            });
+            break;
+        
+        default:
+            text += toMarkdown(content).replace(/\||---|#/g, ''); // Simple conversion
+            break;
+    }
+    return text;
+};
+
+export const toPptOutlineText = (content: EducationalContent): string => {
+    let text = `Slide 1: Title\n${content.title}\n${content.subject} - ${content.gradeLevel}\n\n`;
+    
+    if (content.metadata.objectives && content.metadata.objectives.length > 0) {
+        text += `Slide 2: Learning Objectives\n- ${content.metadata.objectives.join('\n- ')}\n\n`;
+    }
+
+    // Attempt to split content into slides based on headers from the stripped text
+    const sections = stripHtml(content.content).split(/\n\n/); 
+    sections.forEach((section, i) => {
+        if(section.trim()){
+            const lines = section.trim().split('\n');
+            text += `Slide ${i + 3}: ${lines[0]}\n`; // Use first line as title
+            text += lines.slice(1).join('\n') + '\n\n';
+        }
     });
-    outline += '\n';
-    slideNum++;
-  });
-  
-  return outline;
-}
+
+    return text;
+};

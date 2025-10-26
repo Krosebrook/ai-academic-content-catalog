@@ -13,7 +13,9 @@
     "@google/genai": "^1.21.0",
     "react-dom": "^19.1.1",
     "zod": "^4.1.11",
-    "deno.ns": "^0.8.0"
+    "deno.ns": "^0.8.0",
+    "react-markdown": "^10.1.0",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

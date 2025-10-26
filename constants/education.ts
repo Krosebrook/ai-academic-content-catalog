@@ -110,6 +110,7 @@ export const EDUCATIONAL_TOOL_CATEGORIES = [
       { id: 'as-10', name: 'Portfolio Checklist', description: 'Create a checklist of required items for a student portfolio.', popularity: 2 },
       { id: 'as-11', name: 'Custom Rubric Builder', description: 'Specify criteria, levels of achievement (e.g., Excellent, Good, Poor), and point values to generate a detailed rubric.', popularity: 5 },
       { id: 'as-12', name: 'Quiz Question Generator', description: 'Generate a variety of quiz questions (multiple-choice, short-answer, etc.) on a specific topic.', popularity: 5 },
+      { id: 'as-13', name: 'DBQ Creator', description: 'Design a Document-Based Question (DBQ) with a historical prompt and analysis questions.', popularity: 4 },
     ] 
   },
   { 
@@ -141,6 +142,7 @@ export const EDUCATIONAL_TOOL_CATEGORIES = [
         { id: 'sa-09', name: 'Citation Helper (APA/MLA)', description: 'Get help formatting citations for a bibliography.', popularity: 4 },
         { id: 'sa-10', name: 'Self-Correction Test', description: 'Create a practice test with detailed answer explanations.', popularity: 4 },
         { id: 'sa-11', name: 'Flashcard Generator', description: 'Create term/definition pairs for import into Anki/Quizlet.', popularity: 5 },
+        { id: 'sa-12', name: 'Analogy Generator', description: 'Explain a complex topic using simple, relatable analogies.', popularity: 4 },
     ] 
   },
   { 
@@ -157,6 +159,7 @@ export const EDUCATIONAL_TOOL_CATEGORIES = [
         { id: 'ig-08', name: 'Group Project Roles', description: 'Define specific roles and responsibilities for a group project.', popularity: 5 },
         { id: 'ig-09', name: 'Bingo Card Content', description: 'Create items for a vocabulary or concept review bingo game.', popularity: 2 },
         { id: 'ig-10', name: 'Simulation Parameters', description: 'Define the rules and variables for a classroom simulation (e.g., stock market).', popularity: 3 },
+        { id: 'ig-11', name: 'Icebreaker Questions Generator', description: 'Create a set of fun and age-appropriate icebreaker questions for your class.', popularity: 5 },
     ] 
   },
   { 
@@ -185,7 +188,18 @@ export const EDUCATIONAL_TOOL_CATEGORIES = [
         { id: 'la-05', name: 'Audio Script for Text', description: 'Convert a reading passage into a script for audio recording.', popularity: 2 },
         { id: 'la-06', name: 'Visual Schedule Steps', description: 'Break down a task into simple, image-friendly steps for a visual schedule.', popularity: 3 },
         { id: 'la-07', name: 'Sentence Starters', description: 'Provide sentence starters to help students with writing assignments.', popularity: 5 },
+        { id: 'la-08', name: 'IEP Goal Idea Generator', description: 'Help draft measurable goals for an Individualized Education Program based on student needs.', popularity: 4 },
     ] 
+  },
+  {
+    id: 'seller-professional',
+    name: 'Seller & Professional Tools',
+    tools: [
+      { id: 'sp-01', name: 'TPT Product Description', description: 'Write a compelling, keyword-rich description for a Teachers Pay Teachers product.', popularity: 5 },
+      { id: 'sp-02', name: 'Social Media Content Calendar', description: 'Generate a week of social media post ideas to promote your educational products.', popularity: 4 },
+      { id: 'sp-03', name: 'Professional Development Goal Setter', description: 'Draft clear and measurable professional development goals for your teaching portfolio.', popularity: 4 },
+      { id: 'sp-04', name: 'Conference Proposal Abstract', description: 'Write a concise and engaging abstract for a conference presentation proposal.', popularity: 3 },
+    ]
   },
 ];
 
