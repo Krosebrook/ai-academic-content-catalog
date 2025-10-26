@@ -172,7 +172,7 @@ export const EDUCATIONAL_TOOL_CATEGORIES = [
         { id: 'pp-06', name: 'Exam Prep Kit Outline', description: 'Outline the contents of a comprehensive exam prep kit for SAT/ACT.', popularity: 4 },
         { id: 'pp-07', name: 'Classroom Posters Content', description: 'Write the text for educational posters (e.g., grammar rules, lab safety).', popularity: 4 },
         { id: 'pp-08', name: 'Certificate of Achievement', description: 'Draft the wording for a printable award certificate.', popularity: 2 },
-        { id: 'pp-09', name: 'Infographic Creator', description: 'Generate engaging infographic outlines or content suggestions for visual topics.', popularity: 4 },
+        { id: 'pp-09', name: 'Visual Aid Generator', description: 'Generate a high-quality image from a text description for use in lessons or printables.', popularity: 4 },
     ] 
   },
   { 

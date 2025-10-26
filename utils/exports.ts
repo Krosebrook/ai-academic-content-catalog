@@ -1,6 +1,11 @@
-import { EducationalContent, Assessment, AssessmentQuestion, RubricContent } from '../types/education';
+import { EducationalContent, Assessment, RubricContent, ImageContent } from '../types/education';
 
-export function toMarkdown(content: EducationalContent | Assessment | RubricContent): string {
+export function toMarkdown(content: EducationalContent | Assessment | RubricContent | ImageContent): string {
+  if (content.type === 'image') {
+    const image = content as ImageContent;
+    return `## ${image.title}\n\n![Generated Image: ${image.prompt}](data:image/png;base64,${image.base64Image})`;
+  }
+
   if (content.type === 'rubric') {
     const rubric = content as RubricContent;
     let md = `# Rubric: ${rubric.title}\n\n`;
@@ -55,7 +60,7 @@ export function toMarkdown(content: EducationalContent | Assessment | RubricCont
   }
 }
 
-export function toJSON(content: EducationalContent | Assessment | RubricContent): string {
+export function toJSON(content: EducationalContent | Assessment | RubricContent | ImageContent): string {
   return JSON.stringify(content, null, 2);
 }
 
@@ -72,7 +77,7 @@ export function toCSVFlashcards(assessment: Assessment): string {
   return headers + rows;
 }
 
-export function toDocxTextOutline(content: EducationalContent | Assessment | RubricContent): string {
+export function toDocxTextOutline(content: EducationalContent | Assessment | RubricContent | ImageContent): string {
   const md = toMarkdown(content);
   // Simple conversion for text outline: remove markdown formatting
   return md

@@ -1,8 +1,8 @@
-import { EducationalContent, Assessment, RubricContent } from '../types/education';
+import { EducationalContent, Assessment, RubricContent, ImageContent } from '../types/education';
 
 const STORAGE_KEY = 'flashfusion_ai_content';
 
-export const loadContent = (): (EducationalContent | Assessment | RubricContent)[] => {
+export const loadContent = (): (EducationalContent | Assessment | RubricContent | ImageContent)[] => {
   try {
     const storedContent = localStorage.getItem(STORAGE_KEY);
     if (storedContent) {
@@ -14,7 +14,7 @@ export const loadContent = (): (EducationalContent | Assessment | RubricContent)
   return [];
 };
 
-export const saveContent = (newContent: EducationalContent | Assessment | RubricContent): void => {
+export const saveContent = (newContent: EducationalContent | Assessment | RubricContent | ImageContent): void => {
   try {
     const existingContent = loadContent();
     // Prepend new content to show it at the top

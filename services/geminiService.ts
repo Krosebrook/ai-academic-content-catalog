@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { GenerationParams, EducationalContent, Assessment, RubricGenerationParams, RubricContent } from "../types/education";
+import { GenerationParams, EducationalContent, Assessment, RubricGenerationParams, RubricContent, ImageContent } from "../types/education";
 
 // This would be in a .env file
 const API_KEY = process.env.API_KEY; 
@@ -83,6 +83,50 @@ const assessmentSchema = {
         },
         rubric: rubricSchema,
         pointsTotal: { type: Type.NUMBER },
+    }
+};
+
+export const generateImage = async (
+    prompt: string,
+    onChunk: (chunk: string) => void
+): Promise<ImageContent | { error: string }> => {
+    try {
+        onChunk("Sending prompt to image generation model...");
+        const response = await ai.models.generateImages({
+            model: 'imagen-4.0-generate-001',
+            prompt: prompt,
+            config: {
+              numberOfImages: 1,
+              outputMimeType: 'image/png',
+              aspectRatio: '1:1',
+            },
+        });
+        onChunk("\nImage data received.");
+
+        const base64ImageBytes = response.generatedImages?.[0]?.image?.imageBytes;
+
+        if (!base64ImageBytes) {
+            throw new Error("API did not return image data.");
+        }
+
+        const imageContent: ImageContent = {
+            id: self.crypto.randomUUID(),
+            title: prompt.length > 100 ? prompt.substring(0, 97) + '...' : prompt,
+            type: 'image',
+            prompt: prompt,
+            base64Image: base64ImageBytes,
+            generatedAt: new Date().toISOString(),
+        };
+
+        return imageContent;
+
+    } catch (error) {
+        console.error("Error generating image with Gemini:", error);
+        let errorMessage = "Failed to generate image. Please try again.";
+        if (error instanceof Error) {
+            errorMessage = `Failed to generate image: ${error.message}. Please check your API key and try again.`;
+        }
+        return { error: errorMessage };
     }
 };
 

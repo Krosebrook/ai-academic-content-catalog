@@ -1,8 +1,8 @@
 
 
 import React, { useState, useEffect } from 'react';
-import { GenerationParams, EducationalContent, Assessment, RubricContent, Rubric } from '../../types/education';
-import { generateContent } from '../../services/geminiService';
+import { GenerationParams, EducationalContent, Assessment, RubricContent, Rubric, ImageContent } from '../../types/education';
+import { generateContent, generateImage } from '../../services/geminiService';
 import { saveContent } from '../../utils/contentStorage';
 import { SUBJECTS, GRADE_LEVELS, DIFFICULTY_LEVELS, EDUCATIONAL_STANDARDS, BLOOMS_TAXONOMY_LEVELS, DIFFERENTIATION_PROFILES } from '../../constants/education';
 import FFCard from './shared/FFCard';
@@ -11,7 +11,7 @@ import ExportMenu from './exports/ExportMenu';
 import RubricBuilderModal from './tools/RubricBuilderModal';
 import SelectRubricModal from './tools/SelectRubricModal';
 import { toMarkdown } from '../../utils/exports';
-import { parseEducationalContent, parseAssessment } from '../../utils/validation';
+import { parseEducationalContent, parseAssessment, parseImageContent } from '../../utils/validation';
 
 interface StudioProps {
     toolSelection?: {
@@ -34,10 +34,11 @@ const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
         bloomsLevel: 'Apply',
         differentiationProfiles: [],
     });
+    const [imagePrompt, setImagePrompt] = useState('A photorealistic image of a vibrant coral reef teeming with life.');
     const [isGenerating, setIsGenerating] = useState(false);
     const [streamedText, setStreamedText] = useState('');
     const [error, setError] = useState('');
-    const [generatedContent, setGeneratedContent] = useState<EducationalContent | Assessment | RubricContent | null>(null);
+    const [generatedContent, setGeneratedContent] = useState<EducationalContent | Assessment | RubricContent | ImageContent | null>(null);
     
     // State for rubric modals
     const [isRubricBuilderOpen, setIsRubricBuilderOpen] = useState(false);
@@ -47,12 +48,16 @@ const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
     // State for associating rubrics with assessments
     const [includeRubric, setIncludeRubric] = useState(false);
     const [associatedRubric, setAssociatedRubric] = useState<RubricContent | null>(null);
+    
+    const isImageTool = toolSelection?.id === 'pp-09';
 
     useEffect(() => {
         if (toolSelection) {
             let newType: GenerationParams['type'] = 'lesson';
             if (toolSelection.id === 'as-11') { // Custom Rubric Builder
                 newType = 'rubric';
+            } else if (toolSelection.id === 'pp-09') { // Image Generator
+                newType = 'image';
             } else if (toolSelection.categoryId === 'assessments') {
                 newType = 'assessment-questions';
             } else if (toolSelection.categoryId === 'printables') {
@@ -127,35 +132,52 @@ const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
             setStreamedText(prev => prev + chunk);
         };
         
-        const isAssessmentType = params.type === 'assessment' || params.type === 'assessment-questions';
-        
-        let rubricDataForApi: Rubric | undefined = undefined;
-        if (isAssessmentType && includeRubric && associatedRubric) {
-            const { id, type, generatedAt, ...rest } = associatedRubric;
-            rubricDataForApi = rest;
-        }
-
-        const apiParams: GenerationParams = {
-            ...params,
-            includeRubric: isAssessmentType ? includeRubric : undefined,
-            associatedRubric: rubricDataForApi,
-        };
-
-        const result = await generateContent(apiParams, onChunk);
-
-        if ('error' in result) {
-            setError(result.error);
-        } else {
-            const validation = isAssessmentType ? parseAssessment(result) : parseEducationalContent(result);
-            if(validation.success) {
-                const finalContent = validation.data;
-                setGeneratedContent(finalContent as EducationalContent | Assessment);
-                saveContent(finalContent as EducationalContent | Assessment);
+        if (isImageTool) {
+            const result = await generateImage(imagePrompt, onChunk);
+            if ('error' in result) {
+                setError(result.error);
             } else {
-                console.error("Validation failed:", validation.error);
-                setError("Received invalid data structure from the API.");
+                 const validation = parseImageContent(result);
+                 if (validation.success) {
+                    setGeneratedContent(validation.data);
+                    saveContent(validation.data);
+                 } else {
+                    console.error("Validation failed:", validation.error);
+                    setError("Received invalid data structure from the API.");
+                 }
+            }
+        } else {
+            const isAssessmentType = params.type === 'assessment' || params.type === 'assessment-questions';
+            
+            let rubricDataForApi: Rubric | undefined = undefined;
+            if (isAssessmentType && includeRubric && associatedRubric) {
+                const { id, type, generatedAt, ...rest } = associatedRubric;
+                rubricDataForApi = rest;
+            }
+
+            const apiParams: GenerationParams = {
+                ...params,
+                includeRubric: isAssessmentType ? includeRubric : undefined,
+                associatedRubric: rubricDataForApi,
+            };
+
+            const result = await generateContent(apiParams, onChunk);
+
+            if ('error' in result) {
+                setError(result.error);
+            } else {
+                const validation = isAssessmentType ? parseAssessment(result) : parseEducationalContent(result);
+                if(validation.success) {
+                    const finalContent = validation.data;
+                    setGeneratedContent(finalContent as EducationalContent | Assessment);
+                    saveContent(finalContent as EducationalContent | Assessment);
+                } else {
+                    console.error("Validation failed:", validation.error);
+                    setError("Received invalid data structure from the API.");
+                }
             }
         }
+
         setIsGenerating(false);
     };
     
@@ -193,6 +215,21 @@ const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
 
     const renderContent = () => {
         if (!generatedContent) return null;
+        
+        if (generatedContent.type === 'image') {
+            const image = generatedContent as ImageContent;
+            return (
+                <div className="bg-ff-bg-dark p-4 rounded-md border border-slate-700">
+                    <h2 style={{fontFamily: 'var(--ff-font-primary)'}} className="text-lg font-bold mb-4">{image.title}</h2>
+                    <img 
+                        src={`data:image/png;base64,${image.base64Image}`} 
+                        alt={image.prompt}
+                        className="rounded-lg w-full object-contain"
+                    />
+                </div>
+            );
+        }
+
         const markdown = toMarkdown(generatedContent);
     
         let html = '';
@@ -257,148 +294,165 @@ const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* FORM PANEL */}
                 <FFCard className="lg:col-span-1 h-fit">
-                    <h2 style={{fontFamily: 'var(--ff-font-primary)', fontSize: 'var(--ff-text-xl)', fontWeight: 'var(--ff-weight-bold)'}} className="mb-4">Content Generator</h2>
+                    <h2 style={{fontFamily: 'var(--ff-font-primary)', fontSize: 'var(--ff-text-xl)', fontWeight: 'var(--ff-weight-bold)'}} className="mb-4">
+                        {isImageTool ? 'Image Generator' : 'Content Generator'}
+                    </h2>
                     <form onSubmit={handleFormSubmit} className="space-y-4">
-                         <div>
-                            <label className="block text-sm font-medium text-gray-400 mb-1">Content Type</label>
-                            <select value={params.type} onChange={e => handleParamChange('type', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600">
-                                <option value="lesson">Lesson Plan</option>
-                                <option value="assessment-questions">Assessment Questions</option>
-                                <option value="activity">Activity</option>
-                                <option value="resource">Resource</option>
-                                <option value="printable">Printable</option>
-                                <option value="rubric">Custom Rubric</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-400 mb-1">Subject</label>
-                            <select value={params.subject} onChange={e => handleParamChange('subject', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600">
-                                {SUBJECTS.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                            </select>
-                        </div>
-                         <div>
-                            <label className="block text-sm font-medium text-gray-400 mb-1">Grade Level</label>
-                            <select value={params.grade} onChange={e => handleParamChange('grade', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600">
-                                {GRADE_LEVELS.map(g => <option key={g} value={g}>{g}</option>)}
-                            </select>
-                        </div>
-                        
-                        {(params.type === 'lesson' || isAssessmentType) && (
+                        {isImageTool ? (
                             <div className="ff-fade-in-up">
-                                <label htmlFor="educational-standard" className="block text-sm font-medium text-gray-400 mb-1">Educational Standard (optional)</label>
-                                <input
-                                    type="text"
-                                    id="educational-standard"
-                                    list="standards-list"
-                                    value={params.standard}
-                                    onChange={e => handleParamChange('standard', e.target.value)}
+                                <label htmlFor="image-prompt" className="block text-sm font-medium text-gray-400 mb-1">Prompt</label>
+                                <textarea
+                                    id="image-prompt"
+                                    value={imagePrompt}
+                                    onChange={e => setImagePrompt(e.target.value)}
+                                    rows={5}
                                     className="w-full bg-ff-surface p-2 rounded-md border border-slate-600"
-                                    placeholder="e.g., Common Core, NGSS"
+                                    placeholder="e.g., A futuristic classroom with holographic displays..."
                                 />
-                                <datalist id="standards-list">
-                                    {EDUCATIONAL_STANDARDS.map(s => <option key={s} value={s} />)}
-                                </datalist>
                             </div>
-                        )}
-
-                        {(params.type === 'lesson' || isAssessmentType) && (
-                             <div className="ff-fade-in-up">
-                                <label className="block text-sm font-medium text-gray-400 mb-1">Bloom's Taxonomy Level</label>
-                                <select value={params.bloomsLevel} onChange={e => handleParamChange('bloomsLevel', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600">
-                                    {BLOOMS_TAXONOMY_LEVELS.map(d => <option key={d.name} value={d.name} title={d.description}>{d.name}</option>)}
-                                </select>
-                            </div>
-                        )}
-
-                        {(params.type === 'lesson' || isAssessmentType) && (
-                            <div className="ff-fade-in-up">
-                                <label className="block text-sm font-medium text-gray-400 mb-1">Difficulty Level</label>
-                                <select value={params.difficulty} onChange={e => handleParamChange('difficulty', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600">
-                                    {DIFFICULTY_LEVELS.map(d => <option key={d} value={d}>{d}</option>)}
-                                </select>
-                            </div>
-                        )}
-
-                         <div>
-                            <label className="block text-sm font-medium text-gray-400 mb-1">Topic</label>
-                            <input type="text" value={params.topic} onChange={e => handleParamChange('topic', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600" />
-                        </div>
-                        
-                        {(params.type === 'lesson' || isAssessmentType) && (
-                            <div className="ff-fade-in-up space-y-2 pt-2">
-                                <label className="block text-sm font-medium text-gray-400 mb-1">Learning Objectives</label>
-                                {(params.objectives || []).map((obj, index) => (
-                                    <div key={index} className="flex items-center gap-2">
-                                        <input 
-                                            type="text" 
-                                            value={obj} 
-                                            onChange={e => handleObjectiveChange(index, e.target.value)} 
-                                            className="w-full bg-ff-bg-dark p-2 rounded-md border border-slate-700" 
-                                            placeholder={`Objective ${index + 1}`}
+                        ) : (
+                            <>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-400 mb-1">Content Type</label>
+                                    <select value={params.type} onChange={e => handleParamChange('type', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600">
+                                        <option value="lesson">Lesson Plan</option>
+                                        <option value="assessment-questions">Assessment Questions</option>
+                                        <option value="activity">Activity</option>
+                                        <option value="resource">Resource</option>
+                                        <option value="printable">Printable</option>
+                                        <option value="rubric">Custom Rubric</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-400 mb-1">Subject</label>
+                                    <select value={params.subject} onChange={e => handleParamChange('subject', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600">
+                                        {SUBJECTS.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-400 mb-1">Grade Level</label>
+                                    <select value={params.grade} onChange={e => handleParamChange('grade', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600">
+                                        {GRADE_LEVELS.map(g => <option key={g} value={g}>{g}</option>)}
+                                    </select>
+                                </div>
+                                
+                                {(params.type === 'lesson' || isAssessmentType) && (
+                                    <div className="ff-fade-in-up">
+                                        <label htmlFor="educational-standard" className="block text-sm font-medium text-gray-400 mb-1">Educational Standard (optional)</label>
+                                        <input
+                                            type="text"
+                                            id="educational-standard"
+                                            list="standards-list"
+                                            value={params.standard}
+                                            onChange={e => handleParamChange('standard', e.target.value)}
+                                            className="w-full bg-ff-surface p-2 rounded-md border border-slate-600"
+                                            placeholder="e.g., Common Core, NGSS"
                                         />
-                                        <button type="button" onClick={() => handleRemoveObjective(index)} className="text-red-400 hover:text-red-300 p-1 shrink-0">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /></svg>
-                                        </button>
+                                        <datalist id="standards-list">
+                                            {EDUCATIONAL_STANDARDS.map(s => <option key={s} value={s} />)}
+                                        </datalist>
                                     </div>
-                                ))}
-                                <button type="button" onClick={handleAddObjective} className="text-sm text-ff-secondary hover:text-ff-primary">+ Add Objective</button>
-                            </div>
-                        )}
+                                )}
 
-                        {params.type === 'lesson' && (
-                            <div className="ff-fade-in-up space-y-2 pt-2">
-                                <label className="block text-sm font-medium text-gray-400 mb-1">Advanced Differentiation</label>
-                                <div className="p-3 bg-ff-bg-dark rounded-md border border-slate-700 space-y-2">
-                                    {DIFFERENTIATION_PROFILES.map(profile => (
-                                        <div key={profile.id} className="flex items-center gap-2">
-                                            <input
-                                                type="checkbox"
-                                                id={`diff-${profile.id}`}
-                                                checked={(params.differentiationProfiles || []).includes(profile.name)}
-                                                onChange={() => handleDifferentiationChange(profile.name)}
-                                                className="h-4 w-4 rounded bg-ff-surface border-slate-600 text-ff-primary focus:ring-ff-primary"
-                                            />
-                                            <label htmlFor={`diff-${profile.id}`} className="text-sm font-medium text-gray-300 cursor-pointer" title={profile.description}>
-                                                {profile.name}
-                                            </label>
-                                        </div>
-                                    ))}
+                                {(params.type === 'lesson' || isAssessmentType) && (
+                                    <div className="ff-fade-in-up">
+                                        <label className="block text-sm font-medium text-gray-400 mb-1">Bloom's Taxonomy Level</label>
+                                        <select value={params.bloomsLevel} onChange={e => handleParamChange('bloomsLevel', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600">
+                                            {BLOOMS_TAXONOMY_LEVELS.map(d => <option key={d.name} value={d.name} title={d.description}>{d.name}</option>)}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {(params.type === 'lesson' || isAssessmentType) && (
+                                    <div className="ff-fade-in-up">
+                                        <label className="block text-sm font-medium text-gray-400 mb-1">Difficulty Level</label>
+                                        <select value={params.difficulty} onChange={e => handleParamChange('difficulty', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600">
+                                            {DIFFICULTY_LEVELS.map(d => <option key={d} value={d}>{d}</option>)}
+                                        </select>
+                                    </div>
+                                )}
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-400 mb-1">Topic</label>
+                                    <input type="text" value={params.topic} onChange={e => handleParamChange('topic', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600" />
                                 </div>
-                            </div>
-                        )}
-
-
-                        {isAssessmentType && (
-                            <div className="ff-fade-in-up space-y-3 pt-3 border-t border-ff-surface">
-                                <div className="flex items-center gap-2">
-                                    <input type="checkbox" id="includeRubric" checked={includeRubric} onChange={e => {
-                                        setIncludeRubric(e.target.checked);
-                                        if (!e.target.checked) setAssociatedRubric(null);
-                                    }} className="h-4 w-4 rounded bg-ff-surface border-slate-600 text-ff-primary focus:ring-ff-primary" />
-                                    <label htmlFor="includeRubric" className="text-sm font-medium text-gray-300">Include Rubric</label>
-                                </div>
-
-                                {includeRubric && (
-                                    <div className="p-3 bg-ff-bg-dark rounded-md border border-slate-700 space-y-3">
-                                        {associatedRubric ? (
-                                            <div className="flex justify-between items-center">
-                                                <div className="text-sm">
-                                                    <p className="text-ff-text-muted">Associated Rubric:</p>
-                                                    <p className="font-semibold text-ff-text-primary">{associatedRubric.title}</p>
-                                                </div>
-                                                <button type="button" onClick={() => setAssociatedRubric(null)} className="text-xs text-red-400 hover:underline">Remove</button>
+                                
+                                {(params.type === 'lesson' || isAssessmentType) && (
+                                    <div className="ff-fade-in-up space-y-2 pt-2">
+                                        <label className="block text-sm font-medium text-gray-400 mb-1">Learning Objectives</label>
+                                        {(params.objectives || []).map((obj, index) => (
+                                            <div key={index} className="flex items-center gap-2">
+                                                <input 
+                                                    type="text" 
+                                                    value={obj} 
+                                                    onChange={e => handleObjectiveChange(index, e.target.value)} 
+                                                    className="w-full bg-ff-bg-dark p-2 rounded-md border border-slate-700" 
+                                                    placeholder={`Objective ${index + 1}`}
+                                                />
+                                                <button type="button" onClick={() => handleRemoveObjective(index)} className="text-red-400 hover:text-red-300 p-1 shrink-0">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /></svg>
+                                                </button>
                                             </div>
-                                        ) : (
-                                            <div className="flex flex-col sm:flex-row gap-2">
-                                                <FFButton type="button" onClick={openRubricBuilderForAssociation} variant="secondary" className="w-full text-xs">Create New Rubric</FFButton>
-                                                <FFButton type="button" onClick={() => setIsSelectRubricModalOpen(true)} variant="secondary" className="w-full text-xs" style={{backgroundColor: 'var(--ff-surface)'}}>Select Existing</FFButton>
+                                        ))}
+                                        <button type="button" onClick={handleAddObjective} className="text-sm text-ff-secondary hover:text-ff-primary">+ Add Objective</button>
+                                    </div>
+                                )}
+
+                                {params.type === 'lesson' && (
+                                    <div className="ff-fade-in-up space-y-2 pt-2">
+                                        <label className="block text-sm font-medium text-gray-400 mb-1">Advanced Differentiation</label>
+                                        <div className="p-3 bg-ff-bg-dark rounded-md border border-slate-700 space-y-2">
+                                            {DIFFERENTIATION_PROFILES.map(profile => (
+                                                <div key={profile.id} className="flex items-center gap-2">
+                                                    <input
+                                                        type="checkbox"
+                                                        id={`diff-${profile.id}`}
+                                                        checked={(params.differentiationProfiles || []).includes(profile.name)}
+                                                        onChange={() => handleDifferentiationChange(profile.name)}
+                                                        className="h-4 w-4 rounded bg-ff-surface border-slate-600 text-ff-primary focus:ring-ff-primary"
+                                                    />
+                                                    <label htmlFor={`diff-${profile.id}`} className="text-sm font-medium text-gray-300 cursor-pointer" title={profile.description}>
+                                                        {profile.name}
+                                                    </label>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+
+                                {isAssessmentType && (
+                                    <div className="ff-fade-in-up space-y-3 pt-3 border-t border-ff-surface">
+                                        <div className="flex items-center gap-2">
+                                            <input type="checkbox" id="includeRubric" checked={includeRubric} onChange={e => {
+                                                setIncludeRubric(e.target.checked);
+                                                if (!e.target.checked) setAssociatedRubric(null);
+                                            }} className="h-4 w-4 rounded bg-ff-surface border-slate-600 text-ff-primary focus:ring-ff-primary" />
+                                            <label htmlFor="includeRubric" className="text-sm font-medium text-gray-300">Include Rubric</label>
+                                        </div>
+
+                                        {includeRubric && (
+                                            <div className="p-3 bg-ff-bg-dark rounded-md border border-slate-700 space-y-3">
+                                                {associatedRubric ? (
+                                                    <div className="flex justify-between items-center">
+                                                        <div className="text-sm">
+                                                            <p className="text-ff-text-muted">Associated Rubric:</p>
+                                                            <p className="font-semibold text-ff-text-primary">{associatedRubric.title}</p>
+                                                        </div>
+                                                        <button type="button" onClick={() => setAssociatedRubric(null)} className="text-xs text-red-400 hover:underline">Remove</button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex flex-col sm:flex-row gap-2">
+                                                        <FFButton type="button" onClick={openRubricBuilderForAssociation} variant="secondary" className="w-full text-xs">Create New Rubric</FFButton>
+                                                        <FFButton type="button" onClick={() => setIsSelectRubricModalOpen(true)} variant="secondary" className="w-full text-xs" style={{backgroundColor: 'var(--ff-surface)'}}>Select Existing</FFButton>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
                                 )}
-                            </div>
+                            </>
                         )}
-
                         <div className="pt-2">
                             <FFButton 
                                 type="submit"
@@ -407,7 +461,7 @@ const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
                             >
                                 {params.type === 'rubric' 
                                     ? 'Open Rubric Builder' 
-                                    : (isGenerating ? 'Generating...' : 'Generate Content')}
+                                    : (isGenerating ? 'Generating...' : (isImageTool ? 'Generate Image' : 'Generate Content'))}
                             </FFButton>
                         </div>
                     </form>
@@ -439,7 +493,7 @@ const EducationalContentStudio: React.FC<StudioProps> = ({ toolSelection }) => {
                             <div className="text-center py-20">
                                 <h2 style={{ fontFamily: 'var(--ff-font-primary)', fontSize: 'var(--ff-text-xl)', fontWeight: 'var(--ff-weight-bold)' }}>Welcome to the Studio</h2>
                                 <p style={{ color: 'var(--ff-text-muted)', marginTop: 'var(--ff-space-4)' }}>
-                                    Fill out the form to generate new educational content.
+                                    {isImageTool ? 'Describe the image you want to create.' : 'Fill out the form to generate new educational content.'}
                                 </p>
                             </div>
                         </FFCard>

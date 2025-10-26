@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { EducationalContent, Assessment, RubricContent } from '../../types/education';
+import { EducationalContent, Assessment, RubricContent, ImageContent } from '../../types/education';
 import { loadContent } from '../../utils/contentStorage';
 import FFCard from './shared/FFCard';
 import ExportMenu from './exports/ExportMenu';
@@ -14,6 +14,7 @@ const ContentTypeIcon: React.FC<{ type: string }> = ({ type }) => {
         'resource': '💡',
         'printable': '📄',
         'rubric': '⚖️',
+        'image': '🖼️',
     };
     const displayType = type.replace('-questions', '');
     return <span className="text-2xl mr-4" title={displayType}>{iconMap[type] || '📄'}</span>;
@@ -21,8 +22,8 @@ const ContentTypeIcon: React.FC<{ type: string }> = ({ type }) => {
 
 
 const MyContentPanel: React.FC = () => {
-    const [contentList, setContentList] = useState<(EducationalContent | Assessment | RubricContent)[]>([]);
-    const [selectedContent, setSelectedContent] = useState<EducationalContent | Assessment | RubricContent | null>(null);
+    const [contentList, setContentList] = useState<(EducationalContent | Assessment | RubricContent | ImageContent)[]>([]);
+    const [selectedContent, setSelectedContent] = useState<EducationalContent | Assessment | RubricContent | ImageContent | null>(null);
 
     // State for filters
     const [searchQuery, setSearchQuery] = useState('');
@@ -147,6 +148,9 @@ const MyContentPanel: React.FC = () => {
                             </div>
                             {selectedContent?.id === content.id && (
                                 <div className="mt-4 pt-4 border-t border-slate-700 ff-fade-in-up">
+                                    {selectedContent.type === 'image' && (
+                                        <img src={`data:image/png;base64,${(selectedContent as ImageContent).base64Image}`} alt={selectedContent.title} className="rounded-lg mb-4" />
+                                    )}
                                     <ExportMenu content={selectedContent} />
                                 </div>
                             )}

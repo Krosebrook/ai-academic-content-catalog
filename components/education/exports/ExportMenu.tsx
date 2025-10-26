@@ -1,19 +1,20 @@
 import React from 'react';
-import { EducationalContent, Assessment, RubricContent } from '../../../types/education';
+import { EducationalContent, Assessment, RubricContent, ImageContent } from '../../../types/education';
 import { toMarkdown, toJSON, toCSVFlashcards, toDocxTextOutline, toPptOutlineText } from '../../../utils/exports';
 import FFButton from '../shared/FFButton';
 
 interface ExportMenuProps {
-  content: EducationalContent | Assessment | RubricContent;
+  content: EducationalContent | Assessment | RubricContent | ImageContent;
 }
 
 const ExportMenu: React.FC<ExportMenuProps> = ({ content }) => {
   if (!content) return null;
 
-  const handleExport = (format: 'md' | 'json' | 'csv' | 'docx' | 'ppt') => {
+  const handleExport = (format: 'md' | 'json' | 'csv' | 'docx' | 'ppt' | 'png') => {
     let data = '';
     let filename = `${content.title.replace(/\s/g, '_')}`;
     let mimeType = 'text/plain';
+    let blob: Blob;
 
     switch (format) {
       case 'md':
@@ -42,10 +43,28 @@ const ExportMenu: React.FC<ExportMenuProps> = ({ content }) => {
           data = toPptOutlineText(content as EducationalContent);
         }
         break;
+      case 'png':
+        if (content.type === 'image') {
+            data = (content as ImageContent).base64Image;
+            filename += '.png';
+            mimeType = 'image/png';
+        }
+        break;
     }
 
     if (data) {
-      const blob = new Blob([data], { type: mimeType });
+        if (format === 'png') {
+            const byteCharacters = atob(data);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            blob = new Blob([byteArray], { type: mimeType });
+        } else {
+            blob = new Blob([data], { type: mimeType });
+        }
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -63,11 +82,17 @@ const ExportMenu: React.FC<ExportMenuProps> = ({ content }) => {
         Export Content
       </h3>
       <div className="flex flex-wrap gap-2 mt-3">
-        <FFButton variant="secondary" onClick={() => handleExport('md')}>Markdown</FFButton>
+        {content.type === 'image' ? (
+             <FFButton variant="primary" onClick={() => handleExport('png')}>Download PNG</FFButton>
+        ) : (
+            <>
+                <FFButton variant="secondary" onClick={() => handleExport('md')}>Markdown</FFButton>
+                <FFButton variant="secondary" onClick={() => handleExport('docx')}>Docx Outline</FFButton>
+                {content.type === 'lesson' && <FFButton variant="secondary" onClick={() => handleExport('ppt')}>PPT Outline</FFButton>}
+                {content.type === 'assessment' && <FFButton variant="secondary" onClick={() => handleExport('csv')}>CSV Flashcards</FFButton>}
+            </>
+        )}
         <FFButton variant="secondary" onClick={() => handleExport('json')}>JSON</FFButton>
-        <FFButton variant="secondary" onClick={() => handleExport('docx')}>Docx Outline</FFButton>
-        {content.type === 'lesson' && <FFButton variant="secondary" onClick={() => handleExport('ppt')}>PPT Outline</FFButton>}
-        {content.type === 'assessment' && <FFButton variant="secondary" onClick={() => handleExport('csv')}>CSV Flashcards</FFButton>}
       </div>
     </div>
   );

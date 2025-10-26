@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 // Base Schemas
 export const zAudience = z.enum(['educator', 'student', 'both', 'seller']);
-export const zContentKind = z.enum(['lesson', 'assessment', 'activity', 'resource', 'printable', 'rubric', 'assessment-questions', 'flashcard', 'infographic']);
+export const zContentKind = z.enum(['lesson', 'assessment', 'activity', 'resource', 'printable', 'rubric', 'assessment-questions', 'flashcard', 'infographic', 'image']);
 
 export const zRubricRow = z.object({
   criterion: z.string(),
@@ -67,6 +67,15 @@ export const zRubricContent = zRubric.extend({
   generatedAt: z.string().datetime(),
 });
 
+export const zImageContent = z.object({
+  id: z.string().uuid(),
+  title: z.string(), // This will be the prompt
+  type: z.literal('image'),
+  prompt: z.string(),
+  base64Image: z.string(), // base64 encoded image data
+  generatedAt: z.string().datetime(),
+});
+
 
 // Parser functions/guards
 export const parseEducationalContent = (data: unknown) => {
@@ -81,6 +90,10 @@ export const parseRubricContent = (data: unknown) => {
     return zRubricContent.safeParse(data);
 }
 
+export const parseImageContent = (data: unknown) => {
+    return zImageContent.safeParse(data);
+}
+
 // FIX: Add inferred types and interfaces to fix import errors across the application.
 // Type definitions inferred from schemas
 export type Audience = z.infer<typeof zAudience>;
@@ -91,6 +104,7 @@ export type AssessmentQuestion = z.infer<typeof zAssessmentQuestion>;
 export type EducationalContent = z.infer<typeof zEducationalContent>;
 export type Assessment = z.infer<typeof zAssessment>;
 export type RubricContent = z.infer<typeof zRubricContent>;
+export type ImageContent = z.infer<typeof zImageContent>;
 
 // Other types that are missing
 export interface GenerationParams {
