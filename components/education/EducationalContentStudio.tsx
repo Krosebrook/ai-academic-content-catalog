@@ -8,8 +8,12 @@ import FFButton from './shared/FFButton';
 import ProgressBar from './shared/ProgressBar';
 import ExportMenu from './exports/ExportMenu';
 
+type StorableContent = EducationalContent | Assessment | RubricContent | ImageContent;
+
 interface EducationalContentStudioProps {
   toolSelection: { id: string; name: string; categoryId: string; } | null;
+  remixContent: StorableContent | null;
+  onRemixComplete: () => void;
 }
 
 const SimpleRichTextEditor: React.FC<{ value: string; onChange: (value: string) => void; }> = ({ value, onChange }) => {
@@ -37,9 +41,9 @@ const SimpleRichTextEditor: React.FC<{ value: string; onChange: (value: string) 
 };
 
 
-const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ toolSelection }) => {
+const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ toolSelection, remixContent, onRemixComplete }) => {
   const [topic, setTopic] = useState('');
-  const [subject, setSubject] = useState(SUBJECTS[0].id);
+  const [subject, setSubject] = useState(SUBJECTS[0].name);
   const [gradeLevel, setGradeLevel] = useState(GRADE_LEVELS[11]);
   const [standard, setStandard] = useState(EDUCATIONAL_STANDARDS[0]);
   const [customInstructions, setCustomInstructions] = useState('');
@@ -51,6 +55,52 @@ const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ too
   
   const isImageTool = useMemo(() => toolSelection?.id === 'pp-09', [toolSelection]);
 
+  const promptSuggestion = useMemo(() => {
+    if (!toolSelection) {
+      return "e.g., 'Focus on hands-on activities', 'Include a section on historical context'";
+    }
+    const tool = EDUCATIONAL_TOOL_CATEGORIES
+      .flatMap(cat => cat.tools)
+      .find(t => t.id === toolSelection.id);
+
+    return (tool as any)?.promptSuggestion || "e.g., 'Focus on hands-on activities', 'Include a section on historical context'";
+  }, [toolSelection]);
+
+  useEffect(() => {
+    if (remixContent) {
+        // For images, the 'topic' is the prompt. For others, it's the title.
+        if (remixContent.type === 'image') {
+            setTopic(remixContent.prompt);
+        } else {
+            setTopic(remixContent.title);
+        }
+        
+        // Pre-fill common fields if they exist
+        if ('subject' in remixContent && typeof remixContent.subject === 'string') {
+            setSubject(remixContent.subject);
+        }
+        if ('gradeLevel' in remixContent && typeof remixContent.gradeLevel === 'string') {
+            setGradeLevel(remixContent.gradeLevel);
+        }
+        if ('standard' in remixContent && typeof remixContent.standard === 'string' && remixContent.standard) {
+            setStandard(remixContent.standard);
+        } else {
+            // Reset to default if not present in the remixed content
+            setStandard(EDUCATIONAL_STANDARDS[0]);
+        }
+
+        // Clear instructions for the new remix
+        setCustomInstructions('');
+        
+        // Reset the view
+        setGeneratedContent(null);
+        setError(null);
+        
+        // Signal that the remix data has been consumed
+        onRemixComplete();
+    }
+  }, [remixContent, onRemixComplete]);
+
   useEffect(() => {
     if (toolSelection) {
       setGeneratedContent(null);
@@ -59,12 +109,13 @@ const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ too
   }, [toolSelection]);
   
   useEffect(() => {
-      let timer: NodeJS.Timeout;
+      let timer: ReturnType<typeof setInterval> | undefined;
       if (isLoading) {
           setProgress(0);
           timer = setInterval(() => {
               setProgress(oldProgress => {
                   if (oldProgress >= 95) {
+                      clearInterval(timer);
                       return 95;
                   }
                   const diff = Math.random() * 10;
@@ -75,7 +126,7 @@ const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ too
           setProgress(100);
       }
       return () => {
-          clearInterval(timer);
+          if (timer) clearInterval(timer);
       };
   }, [isLoading]);
 
@@ -103,12 +154,12 @@ const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ too
     try {
       let content;
       const categoryId = toolSelection.categoryId;
-      if (categoryId === 'assessments') {
+      if (categoryId === 'assessments' && toolSelection.id !== 'as-06' && toolSelection.id !== 'as-11') {
           content = await generateAssessment(params);
       } else if (toolSelection.id === 'as-06' || toolSelection.id === 'as-11') { // Rubric tools
           content = await generateRubric(params);
       } else if (isImageTool) {
-          content = await generateImage(topic, `Image for ${subject}: ${topic}`);
+          content = await generateImage(params);
       } else {
           content = await generateEducationalContent(params);
       }
@@ -129,6 +180,36 @@ const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ too
         setGeneratedContent(updatedContent as EducationalContent);
         saveContent(updatedContent);
     }
+  };
+  
+  const handleRemixFromStudio = () => {
+    if (!generatedContent) return;
+
+    // Use the generated content itself to pre-fill the form
+    if (generatedContent.type === 'image') {
+        setTopic(generatedContent.prompt);
+    } else {
+        setTopic(generatedContent.title);
+    }
+
+    if ('subject' in generatedContent && typeof generatedContent.subject === 'string') {
+        setSubject(generatedContent.subject);
+    }
+    if ('gradeLevel' in generatedContent && typeof generatedContent.gradeLevel === 'string') {
+        setGradeLevel(generatedContent.gradeLevel);
+    }
+    if ('standard' in generatedContent && typeof generatedContent.standard === 'string' && generatedContent.standard) {
+        setStandard(generatedContent.standard);
+    } else {
+        setStandard(EDUCATIONAL_STANDARDS[0]);
+    }
+
+    // Clear instructions, allowing user to add new ones
+    setCustomInstructions('');
+    
+    // Clear the output panel to prepare for a new generation
+    setGeneratedContent(null);
+    setError(null);
   };
 
 
@@ -200,7 +281,7 @@ const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ too
                   onChange={(e) => setCustomInstructions(e.target.value)}
                   rows={3}
                   className="w-full bg-ff-surface p-2 rounded-md border border-slate-600"
-                  placeholder="e.g., 'Focus on hands-on activities', 'Include a section on historical context'"
+                  placeholder={promptSuggestion}
                 />
               </div>
             </>
@@ -240,8 +321,19 @@ const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ too
                             {generatedContent.questions.map(q => <li key={q.id}>{q.prompt} ({q.points} pts)</li>)}
                         </ol>
                     </div>
-                ): null}
+                ): 'rows' in generatedContent ? (
+                     <div className="prose prose-invert max-w-none text-ff-text-primary">
+                        <h3>{generatedContent.title}</h3>
+                        <p>{generatedContent.rows.length} criteria defined.</p>
+                    </div>
+                ) : null}
                 <ExportMenu content={generatedContent} />
+                <div className="mt-4">
+                    <FFButton variant="accent" onClick={handleRemixFromStudio}>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 inline-block mr-2" viewBox="0 0 20 20" fill="currentColor"><path d="M5 4a1 1 0 00-2 0v7.268a2 2 0 000 3.464V16a1 1 0 102 0v-1.268a2 2 0 000-3.464V4zM11 4a1 1 0 10-2 0v1.268a2 2 0 000 3.464V16a1 1 0 102 0V8.732a2 2 0 000-3.464V4zM16 3a1 1 0 011 1v7.268a2 2 0 010 3.464V16a1 1 0 11-2 0v-1.268a2 2 0 010-3.464V4a1 1 0 011-1z" /></svg>
+                        Remix This Content
+                    </FFButton>
+                </div>
             </div>
         )}
         

@@ -7,6 +7,7 @@ export interface BaseContent {
   title: string;
   type: ContentType;
   generatedAt: string; // ISO 8601 timestamp
+  toolId: string;
 }
 
 export interface EducationalContent extends BaseContent {
@@ -95,6 +96,7 @@ export const rubricContentSchema = z.object({
   title: z.string().min(1),
   rows: z.array(rubricRowSchema).min(1),
   generatedAt: z.string().datetime(),
+  toolId: z.string(),
 });
 
 export const assessmentQuestionSchema = z.object({
@@ -116,6 +118,7 @@ export const assessmentSchema = z.object({
   pointsTotal: z.number().min(0),
   rubric: rubricContentSchema.optional(),
   generatedAt: z.string().datetime(),
+  toolId: z.string(),
 });
 
 export const educationalContentSchema = z.object({
@@ -134,6 +137,7 @@ export const educationalContentSchema = z.object({
     differentiation: z.array(z.string()).optional(),
   }),
   generatedAt: z.string().datetime(),
+  toolId: z.string(),
 });
 
 export const imageContentSchema = z.object({
@@ -143,4 +147,5 @@ export const imageContentSchema = z.object({
     prompt: z.string().min(1, 'Prompt is required.'),
     base64Image: z.string(),
     generatedAt: z.string().datetime(),
+    toolId: z.string(),
 });

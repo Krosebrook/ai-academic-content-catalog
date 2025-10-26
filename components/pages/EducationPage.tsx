@@ -1,11 +1,9 @@
-
-
 import React, { useState, Suspense, lazy } from 'react';
 import EducationalContentStudio from '../education/EducationalContentStudio';
 import MyContentPanel from '../education/MyContentPanel';
 import EducationalToolsRouter from '../education/EducationalToolsRouter';
-
-const EducationAnalyticsPanel = lazy(() => import('../education/analytics/EducationAnalyticsPanel'));
+import { EducationalContent, Assessment, RubricContent, ImageContent } from '../../types/education';
+import { EDUCATIONAL_TOOL_CATEGORIES } from '../../constants/education';
 
 type Tab = 'studio' | 'my-content' | 'tools' | 'analytics';
 
@@ -15,9 +13,14 @@ interface ToolSelection {
   categoryId: string;
 }
 
+type StorableContent = EducationalContent | Assessment | RubricContent | ImageContent;
+
+const EducationAnalyticsPanel = lazy(() => import('../education/analytics/EducationAnalyticsPanel'));
+
 const EducationPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('studio');
   const [selectedTool, setSelectedTool] = useState<ToolSelection | null>(null);
+  const [remixContent, setRemixContent] = useState<StorableContent | null>(null);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'studio', label: 'Studio' },
@@ -31,6 +34,35 @@ const EducationPage: React.FC = () => {
     setActiveTab('studio');
   };
 
+  const handleRemixContent = (contentToRemix: StorableContent) => {
+    // Find the tool and its category based on the toolId stored in the content
+    const tool = EDUCATIONAL_TOOL_CATEGORIES
+        .flatMap(cat => cat.tools)
+        .find(t => t.id === contentToRemix.toolId);
+
+    if (tool) {
+        const category = EDUCATIONAL_TOOL_CATEGORIES.find(cat => cat.tools.some(t => t.id === tool.id));
+        if (category) {
+            setSelectedTool({
+                id: tool.id,
+                name: tool.name,
+                categoryId: category.id,
+            });
+            setRemixContent(contentToRemix);
+            setActiveTab('studio');
+        } else {
+             console.error("Could not find category for tool:", tool.id);
+        }
+    } else {
+        console.error("Could not find tool with ID:", contentToRemix.toolId);
+    }
+  };
+
+  const handleRemixComplete = () => {
+      setRemixContent(null);
+  };
+
+
   const handleTabChange = (tabId: Tab) => {
     if (tabId === 'studio' && activeTab !== 'tools') {
       setSelectedTool(null);
@@ -41,9 +73,9 @@ const EducationPage: React.FC = () => {
   const renderContent = () => {
     switch (activeTab) {
       case 'studio':
-        return <EducationalContentStudio toolSelection={selectedTool} />;
+        return <EducationalContentStudio toolSelection={selectedTool} remixContent={remixContent} onRemixComplete={handleRemixComplete} />;
       case 'my-content':
-        return <MyContentPanel />;
+        return <MyContentPanel onRemix={handleRemixContent} />;
       case 'tools':
         return <EducationalToolsRouter onSelectTool={handleSelectTool} />;
       case 'analytics':

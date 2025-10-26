@@ -8,7 +8,8 @@ import {
   educationalContentSchema,
   assessmentSchema,
   rubricContentSchema,
-  imageContentSchema
+  imageContentSchema,
+  rubricRowSchema
 } from '../types/education';
 import { z } from 'zod';
 
@@ -109,7 +110,9 @@ export interface GenerationParams {
   [key: string]: any; // for other params
 }
 
-async function generateAndValidate<T>(prompt: string, schemaForApi: any, zodSchema: z.ZodType<T>, model: string = 'gemini-2.5-flash'): Promise<T> {
+// FIX: Updated the generic signature to use `z.infer` for robust type inference from the Zod schema.
+// This resolves property access errors on the returned object by ensuring `generatedData` is strongly typed.
+async function generateAndValidate<S extends z.ZodType<any>>(prompt: string, schemaForApi: any, zodSchema: S, model: string = 'gemini-2.5-flash'): Promise<z.infer<S>> {
     const response = await ai.models.generateContent({
         model: model,
         contents: prompt,
@@ -122,15 +125,14 @@ async function generateAndValidate<T>(prompt: string, schemaForApi: any, zodSche
     const jsonText = response.text;
     const parsedJson = JSON.parse(jsonText);
 
-    // Validate with Zod before assigning an ID to avoid validation errors
-    const tempParsedData = { ...parsedJson, id: uuidv4(), type: 'lesson', generatedAt: new Date().toISOString() };
-    const validationResult = zodSchema.safeParse(tempParsedData);
+    // Validate with Zod
+    const validationResult = zodSchema.safeParse(parsedJson);
     if (!validationResult.success) {
         console.error("Zod validation failed:", validationResult.error.flatten());
         throw new Error("Received invalid data structure from API.");
     }
 
-    return parsedJson;
+    return validationResult.data;
 }
 
 export const generateEducationalContent = async (params: GenerationParams): Promise<EducationalContent> => {
@@ -149,14 +151,18 @@ export const generateEducationalContent = async (params: GenerationParams): Prom
 
     const type: EducationalContent['type'] = params.toolId.startsWith('lp-') ? 'lesson' : params.toolId.startsWith('pp-') ? 'printable' : 'activity';
 
-    const generatedData = await generateAndValidate(prompt, lessonPlanSchemaForAPI, educationalContentSchema);
+    const generatedData = await generateAndValidate(prompt, lessonPlanSchemaForAPI, educationalContentSchema.omit({ id: true, type: true, generatedAt: true, toolId: true }));
 
-    return {
+    const result: EducationalContent = {
         ...generatedData,
         id: uuidv4(),
         type: type,
-        generatedAt: new Date().toISOString()
+        generatedAt: new Date().toISOString(),
+        toolId: params.toolId,
     };
+    
+    educationalContentSchema.parse(result);
+    return result;
 };
 
 export const generateAssessment = async (params: GenerationParams): Promise<Assessment> => {
@@ -173,13 +179,26 @@ export const generateAssessment = async (params: GenerationParams): Promise<Asse
         ${params.customInstructions ? `Additional Instructions: ${params.customInstructions}` : ''}
     `;
 
-    const generatedData = await generateAndValidate(prompt, assessmentSchemaForAPI, assessmentSchema.omit({id: true, type: true, generatedAt: true, rubric: true, pointsTotal: true, questions: true}));
+    const apiResponseSchema = z.object({
+        title: z.string(),
+        subject: z.string(),
+        gradeLevel: z.string(),
+        questions: z.array(z.object({
+            type: z.enum(['multiple-choice', 'short-answer', 'essay', 'true-false']),
+            prompt: z.string(),
+            choices: z.array(z.string()).optional(),
+            answerKey: z.string(), // API returns string, we parse it later
+            points: z.number().int(),
+        }))
+    });
+
+    const generatedData = await generateAndValidate(prompt, assessmentSchemaForAPI, apiResponseSchema);
 
     // Post-process answer keys and calculate total points
     let pointsTotal = 0;
-    const questions = generatedData.questions.map((q: any) => {
+    const questions = generatedData.questions.map((q) => {
         pointsTotal += q.points;
-        let answerKey = q.answerKey;
+        let answerKey: string | string[] = q.answerKey;
         if (q.type === 'multiple-choice' && typeof q.answerKey === 'string' && q.answerKey.startsWith('[')) {
             try {
                 answerKey = JSON.parse(q.answerKey);
@@ -188,13 +207,14 @@ export const generateAssessment = async (params: GenerationParams): Promise<Asse
         return { ...q, id: uuidv4(), answerKey };
     });
 
-    const result = {
+    const result: Assessment = {
         ...generatedData,
         id: uuidv4(),
         type: 'assessment' as const,
         questions,
         pointsTotal,
-        generatedAt: new Date().toISOString()
+        generatedAt: new Date().toISOString(),
+        toolId: params.toolId,
     };
     
     assessmentSchema.parse(result);
@@ -212,14 +232,19 @@ export const generateRubric = async (params: GenerationParams): Promise<RubricCo
         ${params.customInstructions ? `Additional Instructions: ${params.customInstructions}` : ''}
     `;
     
-    const generatedData = await generateAndValidate(prompt, rubricSchemaForAPI, rubricContentSchema.omit({id: true, type: true, generatedAt: true}));
+    const apiResponseSchema = rubricContentSchema.omit({id: true, type: true, generatedAt: true, toolId: true}).extend({
+        rows: z.array(rubricRowSchema.omit({id: true}))
+    });
+
+    const generatedData = await generateAndValidate(prompt, rubricSchemaForAPI, apiResponseSchema);
 
     const result: RubricContent = {
         ...generatedData,
         id: uuidv4(),
         type: 'rubric',
-        rows: generatedData.rows.map((r: any) => ({...r, id: uuidv4()})),
-        generatedAt: new Date().toISOString()
+        rows: generatedData.rows.map((r) => ({...r, id: uuidv4()})),
+        generatedAt: new Date().toISOString(),
+        toolId: params.toolId,
     };
 
     rubricContentSchema.parse(result);
@@ -227,10 +252,10 @@ export const generateRubric = async (params: GenerationParams): Promise<RubricCo
 };
 
 
-export const generateImage = async (prompt: string, title: string): Promise<ImageContent> => {
+export const generateImage = async (params: GenerationParams): Promise<ImageContent> => {
     const response = await ai.models.generateImages({
         model: 'imagen-4.0-generate-001',
-        prompt: prompt,
+        prompt: params.topic,
         config: {
           numberOfImages: 1,
           outputMimeType: 'image/png',
@@ -247,10 +272,11 @@ export const generateImage = async (prompt: string, title: string): Promise<Imag
     const imageData: ImageContent = {
         id: uuidv4(),
         type: 'image',
-        title: title || 'Generated Image',
-        prompt: prompt,
+        title: `Image for ${params.subject}: ${params.topic}`,
+        prompt: params.topic,
         base64Image: base64ImageBytes,
-        generatedAt: new Date().toISOString()
+        generatedAt: new Date().toISOString(),
+        toolId: params.toolId,
     };
     
     // Validate with Zod

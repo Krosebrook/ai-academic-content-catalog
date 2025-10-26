@@ -3,6 +3,14 @@ import { EducationalContent, Assessment, RubricContent, ImageContent } from '../
 import { loadContent } from '../../utils/contentStorage';
 import FFCard from './shared/FFCard';
 import ExportMenu from './exports/ExportMenu';
+import FFButton from './shared/FFButton';
+import { GRADE_LEVELS } from '../../constants/education';
+
+type StorableContent = EducationalContent | Assessment | RubricContent | ImageContent;
+
+interface MyContentPanelProps {
+    onRemix: (content: StorableContent) => void;
+}
 
 const ContentTypeIcon: React.FC<{ type: string }> = ({ type }) => {
     const iconMap: Record<string, string> = {
@@ -20,9 +28,9 @@ const ContentTypeIcon: React.FC<{ type: string }> = ({ type }) => {
 };
 
 
-const MyContentPanel: React.FC = () => {
-    const [contentList, setContentList] = useState<(EducationalContent | Assessment | RubricContent | ImageContent)[]>([]);
-    const [selectedContent, setSelectedContent] = useState<EducationalContent | Assessment | RubricContent | ImageContent | null>(null);
+const MyContentPanel: React.FC<MyContentPanelProps> = ({ onRemix }) => {
+    const [contentList, setContentList] = useState<StorableContent[]>([]);
+    const [selectedContent, setSelectedContent] = useState<StorableContent | null>(null);
 
     // State for filters
     const [searchQuery, setSearchQuery] = useState('');
@@ -60,10 +68,21 @@ const MyContentPanel: React.FC = () => {
         });
     }, [contentList, searchQuery, typeFilter, subjectFilter, gradeFilter]);
     
-    // Get unique values for filter dropdowns
-    const contentTypes = useMemo(() => [...new Set(contentList.map(c => c.type))], [contentList]);
-    const subjects = useMemo(() => [...new Set(contentList.flatMap(c => ('subject' in c && (c as EducationalContent).subject) ? [(c as EducationalContent).subject] : []))], [contentList]);
-    const gradeLevels = useMemo(() => [...new Set(contentList.flatMap(c => ('gradeLevel' in c && (c as EducationalContent).gradeLevel) ? [(c as EducationalContent).gradeLevel] : []))], [contentList]);
+    // Get unique, sorted values for filter dropdowns
+    const contentTypes = useMemo(() => [...new Set(contentList.map(c => c.type))].sort(), [contentList]);
+    const subjects = useMemo(() => {
+        // FIX: Replaced a problematic flatMap with a more reliable map/filter chain to correctly extract and type subjects as strings.
+        const allSubjects = contentList.map(c => 'subject' in c ? (c as EducationalContent | Assessment).subject : null);
+        const uniqueSubjects = [...new Set(allSubjects.filter((s): s is string => Boolean(s)))];
+        return uniqueSubjects.sort((a, b) => a.localeCompare(b));
+    }, [contentList]);
+    const gradeLevels = useMemo(() => {
+        // FIX: Replaced a problematic flatMap with a more reliable map/filter chain to correctly extract and type grade levels as strings.
+        const allGrades = contentList.map(c => 'gradeLevel' in c ? (c as EducationalContent | Assessment).gradeLevel : null);
+        const uniqueGrades = [...new Set(allGrades.filter((s): s is string => Boolean(s)))];
+        // Sort based on the master GRADE_LEVELS array order
+        return uniqueGrades.sort((a, b) => GRADE_LEVELS.indexOf(a) - GRADE_LEVELS.indexOf(b));
+    }, [contentList]);
 
 
     if (contentList.length === 0) {
@@ -154,6 +173,12 @@ const MyContentPanel: React.FC = () => {
                                         <img src={`data:image/png;base64,${(selectedContent as ImageContent).base64Image}`} alt={selectedContent.title} className="rounded-lg mb-4" />
                                     )}
                                     <ExportMenu content={selectedContent} />
+                                    <div className="mt-4">
+                                        <FFButton variant="accent" onClick={() => onRemix(selectedContent)}>
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 inline-block mr-2" viewBox="0 0 20 20" fill="currentColor"><path d="M5 4a1 1 0 00-2 0v7.268a2 2 0 000 3.464V16a1 1 0 102 0v-1.268a2 2 0 000-3.464V4zM11 4a1 1 0 10-2 0v1.268a2 2 0 000 3.464V16a1 1 0 102 0V8.732a2 2 0 000-3.464V4zM16 3a1 1 0 011 1v7.268a2 2 0 010 3.464V16a1 1 0 11-2 0v-1.268a2 2 0 010-3.464V4a1 1 0 011-1z" /></svg>
+                                            Remix This Content
+                                        </FFButton>
+                                    </div>
                                 </div>
                             )}
                         </FFCard>

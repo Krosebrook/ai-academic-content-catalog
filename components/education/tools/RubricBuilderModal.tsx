@@ -29,6 +29,9 @@ const RubricBuilderModal: React.FC<RubricBuilderModalProps> = ({ onClose, onSave
       title,
       rows,
       generatedAt: new Date().toISOString(),
+      // FIX: Added missing 'toolId' property to conform to the RubricContent type.
+      // Defaults to 'as-11' (Custom Rubric Builder) for new rubrics.
+      toolId: initialRubric?.toolId || 'as-11',
     };
     onSave(newRubric);
     onClose();
