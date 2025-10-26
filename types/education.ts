@@ -136,3 +136,10 @@ export interface EducationalAnalytics {
   toolUsage: { toolId: string; name: string; usage: number }[];
   userSatisfaction: number;
 }
+
+export type AspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
+export interface ImageGenerationParams {
+    prompt: string;
+    aspectRatio: AspectRatio;
+    style: string;
+}

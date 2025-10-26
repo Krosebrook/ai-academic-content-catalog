@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import {
     GenerationParams,
     RubricGenerationParams,
+    ImageGenerationParams,
     EducationalContent,
     Assessment,
     RubricContent,
@@ -189,15 +190,19 @@ export const generateRubric = async (params: RubricGenerationParams): Promise<Ru
 };
 
 
-export const generateImage = async (prompt: string): Promise<ImageContent | { error: string }> => {
+export const generateImage = async (params: ImageGenerationParams): Promise<ImageContent | { error: string }> => {
     try {
+        const finalPrompt = (params.style && params.style.toLowerCase() !== 'default')
+            ? `${params.style} style, ${params.prompt}`
+            : params.prompt;
+
         const response = await ai.models.generateImages({
             model: 'imagen-4.0-generate-001', // High-quality image model
-            prompt: prompt,
+            prompt: finalPrompt,
             config: {
               numberOfImages: 1,
               outputMimeType: 'image/png',
-              aspectRatio: '1:1',
+              aspectRatio: params.aspectRatio,
             },
         });
 
@@ -209,9 +214,9 @@ export const generateImage = async (prompt: string): Promise<ImageContent | { er
 
         const imageContent: ImageContent = {
             id: uuidv4(),
-            title: prompt,
+            title: params.prompt,
             type: 'image',
-            prompt: prompt,
+            prompt: params.prompt,
             base64Image: base64ImageBytes,
             generatedAt: new Date().toISOString(),
         };

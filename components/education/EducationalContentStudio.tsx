@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useReducer } from 'react';
 import ReactMarkdown from 'react-markdown';
 import {
     GenerationParams, ContentKind, EducationalContent,
-    Assessment, RubricContent, ImageContent
+    Assessment, RubricContent, ImageContent, AspectRatio
 } from '../../types/education';
 import {
     SUBJECTS, GRADE_LEVELS
@@ -19,6 +19,61 @@ import RubricBuilderModal from './tools/RubricBuilderModal';
 import SelectRubricModal from './tools/SelectRubricModal';
 
 type GeneratedContent = EducationalContent | Assessment | RubricContent | ImageContent;
+
+// --- Reducer for complex form state management ---
+
+interface StudioFormState {
+    params: GenerationParams;
+    imagePrompt: string;
+    aspectRatio: AspectRatio;
+    imageStyle: string;
+}
+
+const initialFormState: StudioFormState = {
+    params: {
+        audience: 'educator',
+        type: 'lesson',
+        subject: 'Mathematics',
+        grade: '9th Grade',
+        topic: 'Introduction to Algebra',
+    },
+    imagePrompt: '',
+    aspectRatio: '1:1',
+    imageStyle: 'Default',
+};
+
+type StudioFormAction =
+    | { type: 'UPDATE_PARAM'; payload: { field: keyof GenerationParams; value: any } }
+    | { type: 'UPDATE_IMAGE_PARAM'; payload: { field: 'imagePrompt' | 'aspectRatio' | 'imageStyle'; value: string } }
+    | { type: 'SET_TOOL_TYPE'; payload: { type: ContentKind; includeRubric?: boolean } };
+
+function studioFormReducer(state: StudioFormState, action: StudioFormAction): StudioFormState {
+    switch (action.type) {
+        case 'UPDATE_PARAM':
+            return {
+                ...state,
+                params: { ...state.params, [action.payload.field]: action.payload.value },
+            };
+        case 'UPDATE_IMAGE_PARAM':
+            return {
+                ...state,
+                [action.payload.field]: action.payload.value,
+            };
+        case 'SET_TOOL_TYPE':
+            return {
+                ...state,
+                params: {
+                    ...state.params,
+                    type: action.payload.type,
+                    includeRubric: action.payload.includeRubric || false,
+                    associatedRubric: null,
+                },
+            };
+        default:
+            return state;
+    }
+}
+
 
 // --- Sub-components for Interactive Editing ---
 
@@ -143,7 +198,43 @@ const EditableContentViewer: React.FC<{
     );
 };
 
-// --- Main Component ---
+
+// --- Content Viewer Component ---
+
+interface ContentViewerProps {
+    content: GeneratedContent;
+    editedBody: string | null;
+    onContentChange: (newHtml: string) => void;
+}
+
+const ContentViewer: React.FC<ContentViewerProps> = ({ content, editedBody, onContentChange }) => {
+    const isEditable = 'content' in content && ['lesson', 'activity', 'resource', 'printable'].includes(content.type);
+
+    if (content.type === 'image') {
+        return (
+            <FFCard>
+                <h2 className="text-xl font-bold mb-4">{content.title}</h2>
+                <img src={`data:image/png;base64,${(content as ImageContent).base64Image}`} alt={content.title} className="rounded-lg w-full" />
+            </FFCard>
+        );
+    }
+
+    if (isEditable && editedBody !== null) {
+        return <EditableContentViewer initialContent={editedBody} onContentChange={onContentChange} />;
+    }
+
+    // Fallback for non-editable content like assessments and rubrics
+    return (
+        <FFCard>
+            <div className="prose prose-invert max-w-none prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg">
+                <ReactMarkdown>{toMarkdown(content as EducationalContent | Assessment | RubricContent)}</ReactMarkdown>
+            </div>
+        </FFCard>
+    );
+};
+
+
+// --- Main Studio Component ---
 
 interface EducationalContentStudioProps {
   toolSelection: {
@@ -154,24 +245,15 @@ interface EducationalContentStudioProps {
 }
 
 const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ toolSelection }) => {
-    const [params, setParams] = useState<GenerationParams>({
-        audience: 'educator',
-        type: 'lesson',
-        subject: 'Mathematics',
-        grade: '9th Grade',
-        topic: 'Introduction to Algebra',
-    });
-    const [imagePrompt, setImagePrompt] = useState('');
-
+    const [formState, dispatch] = useReducer(studioFormReducer, initialFormState);
+    
     const [isLoading, setIsLoading] = useState(false);
     const [loadingProgress, setLoadingProgress] = useState(0);
     const [error, setError] = useState<string | null>(null);
     const [generatedContent, setGeneratedContent] = useState<GeneratedContent | null>(null);
     
-    // State for interactive editing
     const [editedContentBody, setEditedContentBody] = useState<string | null>(null);
     const [isDirty, setIsDirty] = useState(false);
-
 
     const [isRubricBuilderOpen, setIsRubricBuilderOpen] = useState(false);
     const [isSelectRubricOpen, setIsSelectRubricOpen] = useState(false);
@@ -193,25 +275,20 @@ const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ too
 
             if (toolSelection.id === 'as-06' || toolSelection.id === 'as-11') {
                 setIsRubricBuilderOpen(true);
-            } else if (toolSelection.id === 'as-03') { // Essay Prompt & Rubric
-                setParams(p => ({ ...p, type: 'assessment', includeRubric: true }));
+            } else if (toolSelection.id === 'as-03') {
+                dispatch({ type: 'SET_TOOL_TYPE', payload: { type: 'assessment', includeRubric: true } });
             } else {
-                setParams(p => ({ ...p, type: newType, includeRubric: false, associatedRubric: null }));
+                dispatch({ type: 'SET_TOOL_TYPE', payload: { type: newType } });
             }
         }
     }, [toolSelection]);
     
      useEffect(() => {
-        // When new content is generated, initialize the editor's state
         if (generatedContent && 'content' in generatedContent) {
             setEditedContentBody((generatedContent as EducationalContent).content);
             setIsDirty(false);
         }
     }, [generatedContent]);
-
-    const handleParamChange = useCallback((field: keyof GenerationParams, value: any) => {
-        setParams(prev => ({ ...prev, [field]: value }));
-    }, []);
 
     const handleGenerate = async () => {
         setIsLoading(true);
@@ -228,9 +305,13 @@ const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ too
         try {
             let result;
             if (isImageTool) {
-                result = await generateImage(imagePrompt);
+                result = await generateImage({
+                    prompt: formState.imagePrompt,
+                    aspectRatio: formState.aspectRatio,
+                    style: formState.imageStyle
+                });
             } else {
-                result = await generateEducationalContent(params);
+                result = await generateEducationalContent(formState.params);
             }
 
             if (result && 'error' in result) {
@@ -256,47 +337,14 @@ const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ too
 
     const handleSave = () => {
         if (!generatedContent) return;
-
         let contentToSave = { ...generatedContent };
-
         if (isDirty && editedContentBody !== null && 'content' in contentToSave) {
             (contentToSave as EducationalContent).content = editedContentBody;
         }
-
         saveContent(contentToSave);
-        // After saving, we update the "master" content state so that if the user
-        // exports *after* saving, they get the latest version.
         setGeneratedContent(contentToSave);
         alert("Content saved to 'My Content'!");
-        setIsDirty(false); // Reset dirty state after saving
-    };
-
-    const renderGeneratedContent = () => {
-        if (!generatedContent) return null;
-
-        const isEditable = 'content' in generatedContent && ['lesson', 'activity', 'resource', 'printable'].includes(generatedContent.type);
-
-        if (generatedContent.type === 'image') {
-            return (
-                <FFCard>
-                    <h2 className="text-xl font-bold mb-4">{generatedContent.title}</h2>
-                    <img src={`data:image/png;base64,${generatedContent.base64Image}`} alt={generatedContent.title} className="rounded-lg w-full max-w-md mx-auto" />
-                </FFCard>
-            );
-        }
-
-        if (isEditable && editedContentBody !== null) {
-            return <EditableContentViewer initialContent={editedContentBody} onContentChange={handleContentChange} />;
-        }
-
-        // Fallback for non-editable content like assessments and rubrics
-        return (
-            <FFCard>
-                <div className="prose prose-invert max-w-none prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg">
-                    <ReactMarkdown>{toMarkdown(generatedContent as EducationalContent | Assessment | RubricContent)}</ReactMarkdown>
-                </div>
-            </FFCard>
-        );
+        setIsDirty(false);
     };
     
     return (
@@ -312,42 +360,73 @@ const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ too
 
                 <FFCard>
                     {isImageTool ? (
-                        <div>
-                            <label className="block text-sm font-medium text-gray-400 mb-1">Image Description</label>
-                            <textarea value={imagePrompt} onChange={e => setImagePrompt(e.target.value)} rows={4} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600" placeholder="e.g., A photorealistic image of a red panda coding on a laptop in a bamboo forest" />
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-400 mb-1">Image Description</label>
+                                <textarea 
+                                    value={formState.imagePrompt} 
+                                    onChange={e => dispatch({ type: 'UPDATE_IMAGE_PARAM', payload: { field: 'imagePrompt', value: e.target.value } })}
+                                    rows={3} 
+                                    className="w-full bg-ff-surface p-2 rounded-md border border-slate-600" 
+                                    placeholder="e.g., A red panda coding on a laptop in a bamboo forest" 
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-400 mb-1">Style</label>
+                                    <select 
+                                        value={formState.imageStyle} 
+                                        onChange={e => dispatch({ type: 'UPDATE_IMAGE_PARAM', payload: { field: 'imageStyle', value: e.target.value } })}
+                                        className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10">
+                                        {['Default', 'Photorealistic', 'Cartoon', 'Watercolor', 'Fantasy', 'Anime', 'Line Art'].map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-400 mb-1">Aspect Ratio</label>
+                                    <select 
+                                        value={formState.aspectRatio}
+                                        onChange={e => dispatch({ type: 'UPDATE_IMAGE_PARAM', payload: { field: 'aspectRatio', value: e.target.value as AspectRatio } })}
+                                        className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10">
+                                        <option value="1:1">1:1 (Square)</option>
+                                        <option value="16:9">16:9 (Landscape)</option>
+                                        <option value="9:16">9:16 (Portrait)</option>
+                                        <option value="4:3">4:3 (Standard)</option>
+                                        <option value="3:4">3:4 (Tall)</option>
+                                    </select>
+                                </div>
+                            </div>
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            {/* Standard form fields */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-400 mb-1">Subject</label>
-                                    <select value={params.subject} onChange={e => handleParamChange('subject', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10">
+                                    <select value={formState.params.subject} onChange={e => dispatch({ type: 'UPDATE_PARAM', payload: { field: 'subject', value: e.target.value } })} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10">
                                         {SUBJECTS.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                                     </select>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-400 mb-1">Grade Level</label>
-                                    <select value={params.grade} onChange={e => handleParamChange('grade', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10">
+                                    <select value={formState.params.grade} onChange={e => dispatch({ type: 'UPDATE_PARAM', payload: { field: 'grade', value: e.target.value } })} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10">
                                         {GRADE_LEVELS.map(g => <option key={g} value={g}>{g}</option>)}
                                     </select>
                                 </div>
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-400 mb-1">Topic / Title</label>
-                                <input type="text" value={params.topic} onChange={e => handleParamChange('topic', e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600" />
+                                <input type="text" value={formState.params.topic} onChange={e => dispatch({ type: 'UPDATE_PARAM', payload: { field: 'topic', value: e.target.value } })} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600" />
                             </div>
                             
-                            {params.includeRubric && (
+                            {formState.params.includeRubric && (
                                  <div className="pt-2">
-                                     {params.associatedRubric ? (
+                                     {formState.params.associatedRubric ? (
                                          <FFCard>
                                              <div className="flex justify-between items-center">
                                                  <div>
                                                     <p className="text-sm text-green-400">Rubric Attached</p>
-                                                    <p className="font-semibold">{params.associatedRubric.title}</p>
+                                                    <p className="font-semibold">{formState.params.associatedRubric.title}</p>
                                                  </div>
-                                                 <FFButton variant="secondary" onClick={() => handleParamChange('associatedRubric', null)}>Remove</FFButton>
+                                                 <FFButton variant="secondary" onClick={() => dispatch({ type: 'UPDATE_PARAM', payload: { field: 'associatedRubric', value: null } })}>Remove</FFButton>
                                              </div>
                                          </FFCard>
                                      ) : (
@@ -363,7 +442,7 @@ const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ too
                     )}
 
                     <div className="mt-6">
-                        <FFButton onClick={handleGenerate} disabled={isLoading || !toolSelection || (!isImageTool && !params.topic) || (isImageTool && !imagePrompt)} className="w-full text-lg py-3">
+                        <FFButton onClick={handleGenerate} disabled={isLoading || !toolSelection || (!isImageTool && !formState.params.topic) || (isImageTool && !formState.imagePrompt)} className="w-full text-lg py-3">
                             {isLoading ? 'Generating...' : '✨ Generate Content'}
                         </FFButton>
                     </div>
@@ -384,7 +463,11 @@ const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ too
                 {error && <FFCard><div className="text-red-400 bg-red-900/50 p-4 rounded-lg">{error}</div></FFCard>}
                 {generatedContent && (
                     <div className="space-y-4">
-                        {renderGeneratedContent()}
+                        <ContentViewer 
+                            content={generatedContent}
+                            editedBody={editedContentBody}
+                            onContentChange={handleContentChange}
+                        />
                         <div className="flex gap-3">
                              <FFButton onClick={handleSave} variant="primary" className={isDirty ? 'ff-pulse-glow' : ''}>
                                 {isDirty ? 'Save Changes' : 'Save to My Content'}
@@ -404,11 +487,11 @@ const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ too
 
             {isRubricBuilderOpen && (
                 <RubricBuilderModal
-                    initialTitle={params.topic ? `Rubric for ${params.topic}`: ''}
-                    initialTopic={params.topic}
+                    initialTitle={formState.params.topic ? `Rubric for ${formState.params.topic}`: ''}
+                    initialTopic={formState.params.topic}
                     onClose={() => setIsRubricBuilderOpen(false)}
                     onRubricGenerated={(rubric) => {
-                        handleParamChange('associatedRubric', rubric)
+                        dispatch({ type: 'UPDATE_PARAM', payload: { field: 'associatedRubric', value: rubric } });
                         setIsRubricBuilderOpen(false);
                     }}
                 />
@@ -417,7 +500,7 @@ const EducationalContentStudio: React.FC<EducationalContentStudioProps> = ({ too
                 <SelectRubricModal
                     onClose={() => setIsSelectRubricOpen(false)}
                     onSelect={(rubric) => {
-                        handleParamChange('associatedRubric', rubric);
+                        dispatch({ type: 'UPDATE_PARAM', payload: { field: 'associatedRubric', value: rubric } });
                         setIsSelectRubricOpen(false);
                     }}
                 />
