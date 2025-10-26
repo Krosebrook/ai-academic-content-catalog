@@ -3,8 +3,10 @@ import { z } from 'zod';
 
 export type ContentType = 'lesson' | 'activity' | 'resource' | 'printable' | 'assessment' | 'rubric' | 'image' | 'assessment-questions';
 
+// --- Core Content Types ---
 export interface BaseContent {
   id: string;
+  user_id: string; // Owner of the content
   title: string;
   type: ContentType;
   generatedAt: string; // ISO 8601 timestamp
@@ -70,22 +72,13 @@ export interface Assessment extends BaseContent {
   sources?: Source[];
 }
 
-
 export interface ImageContent extends BaseContent {
   type: 'image';
   prompt: string;
   base64Image: string;
 }
 
-export interface EducationalAnalytics {
-  contentCreated: number;
-  popularSubjects: { subject: string; count: number }[];
-  popularGrades: { grade: string; count: number }[];
-  toolUsage: { toolId: string; name: string; usage: number }[];
-  userSatisfaction: number;
-}
-
-// Zod schemas for validation
+// --- Zod Schemas for Validation ---
 const sourceSchema = z.object({
   uri: z.string().url(),
   title: z.string(),
@@ -103,14 +96,18 @@ export const rubricRowSchema = z.object({
   levels: z.array(rubricLevelSchema).min(1),
 });
 
-export const rubricContentSchema = z.object({
+const baseContentSchema = z.object({
   id: z.string().uuid(),
-  type: z.literal('rubric'),
-  title: z.string().min(1),
-  rows: z.array(rubricRowSchema).min(1),
+  user_id: z.string().uuid(),
   generatedAt: z.string().datetime(),
   toolId: z.string(),
   collectionId: z.string().uuid().optional(),
+});
+
+export const rubricContentSchema = baseContentSchema.extend({
+  type: z.literal('rubric'),
+  title: z.string().min(1),
+  rows: z.array(rubricRowSchema).min(1),
 });
 
 export const assessmentQuestionSchema = z.object({
@@ -122,8 +119,7 @@ export const assessmentQuestionSchema = z.object({
   points: z.number().min(0),
 });
 
-export const assessmentSchema = z.object({
-  id: z.string().uuid(),
+export const assessmentSchema = baseContentSchema.extend({
   type: z.enum(['assessment', 'assessment-questions']),
   title: z.string().min(1),
   subject: z.string(),
@@ -131,14 +127,10 @@ export const assessmentSchema = z.object({
   questions: z.array(assessmentQuestionSchema).min(1),
   pointsTotal: z.number().min(0),
   rubric: rubricContentSchema.optional(),
-  generatedAt: z.string().datetime(),
-  toolId: z.string(),
-  collectionId: z.string().uuid().optional(),
   sources: z.array(sourceSchema).optional(),
 });
 
-export const educationalContentSchema = z.object({
-  id: z.string().uuid(),
+export const educationalContentSchema = baseContentSchema.extend({
   type: z.enum(['lesson', 'activity', 'resource', 'printable']),
   title: z.string().min(1),
   targetAudience: z.enum(['educator', 'student', 'both', 'seller']),
@@ -152,19 +144,79 @@ export const educationalContentSchema = z.object({
     objectives: z.array(z.string()).optional(),
     differentiation: z.array(z.string()).optional(),
   }),
-  generatedAt: z.string().datetime(),
-  toolId: z.string(),
-  collectionId: z.string().uuid().optional(),
   sources: z.array(sourceSchema).optional(),
 });
 
-export const imageContentSchema = z.object({
-    id: z.string().uuid(),
-    type: z.literal('image'),
-    title: z.string().min(1, 'Title is required.'),
-    prompt: z.string().min(1, 'Prompt is required.'),
-    base64Image: z.string(),
-    generatedAt: z.string().datetime(),
-    toolId: z.string(),
-    collectionId: z.string().uuid().optional(),
+export const imageContentSchema = baseContentSchema.extend({
+  type: z.literal('image'),
+  title: z.string().min(1, 'Title is required.'),
+  prompt: z.string().min(1, 'Prompt is required.'),
+  base64Image: z.string(),
 });
+
+
+// --- Phase 3: Collaboration ---
+export interface Comment {
+    id: string;
+    content_id: string;
+    user_id: string;
+    user_email: string; // to display without another join
+    text: string;
+    created_at: string;
+}
+export type PermissionLevel = 'viewer' | 'editor';
+export interface ContentPermission {
+    id: string;
+    content_id: string;
+    user_id: string; // The user being granted permission
+    permission_level: PermissionLevel;
+}
+
+// --- Phase 4: Marketplace ---
+export interface PublishedContent extends BaseContent {
+    original_content_id: string;
+    creator_name: string;
+    avg_rating: number;
+    review_count: number;
+    price: number; // in cents
+}
+export interface Review {
+    id: string;
+    published_content_id: string;
+    user_id: string;
+    rating: number; // 1-5
+    comment: string;
+    created_at: string;
+}
+
+// --- Phase 5: Student Assistant ---
+export interface Classroom {
+    id: string;
+    teacher_id: string;
+    name: string;
+    join_code: string;
+}
+export interface Assignment {
+    id: string;
+    classroom_id: string;
+    content_id: string;
+    title: string;
+    due_date?: string;
+}
+export interface StudentInteraction {
+    id: string;
+    assignment_id: string;
+    student_id: string;
+    question: string;
+    ai_response: string;
+    timestamp: string;
+}
+
+// FIX: Add missing EducationalAnalytics type used in EducationAnalyticsPanel.tsx
+export interface EducationalAnalytics {
+    contentCreated: number;
+    popularSubjects: { subject: string; count: number }[];
+    popularGrades: { grade: string; count: number }[];
+    toolUsage: { toolId: string; name: string; usage: number }[];
+    userSatisfaction: number;
+}

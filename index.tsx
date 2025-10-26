@@ -1,8 +1,7 @@
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import { AuthProvider } from './utils/auth-protection';
+import { AuthContextProvider } from './auth/AuthContext';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -12,8 +11,8 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <AuthProvider>
+    <AuthContextProvider>
       <App />
-    </AuthProvider>
+    </AuthContextProvider>
   </React.StrictMode>
 );

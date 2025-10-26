@@ -1,3 +1,4 @@
+import { EDUCATIONAL_TOOL_CATEGORIES as existingCategories } from './existingConstants'; // Assuming existing constants are in a separate file to avoid circular dependencies if needed.
 
 export const EDUCATIONAL_STANDARDS = [
   'Common Core State Standards', 'Next Generation Science Standards (NGSS)',
@@ -77,6 +78,13 @@ export const GRADE_LEVELS = [
 ];
 
 export const EDUCATIONAL_TOOL_CATEGORIES = [
+  { 
+    id: 'packages', 
+    name: 'Content Packages', 
+    tools: [
+      { id: 'pkg-01', name: 'Unit Starter Package', description: 'Generate a lesson plan, a quiz, and a study guide for a topic, all at once.', popularity: 5, promptSuggestion: 'e.g., "The package should also include a vocabulary list. The quiz should have 10 multiple-choice questions."' },
+    ]
+  },
   { 
     id: 'lesson-planning', 
     name: 'Lesson Planning', 

@@ -1,8 +1,11 @@
-
 import React, { useState } from 'react';
-import { Collection } from '../../../utils/contentStorage';
 import FFCard from '../shared/FFCard';
 import FFButton from '../shared/FFButton';
+
+interface Collection {
+    id: string;
+    name: string;
+}
 
 interface MoveToCollectionModalProps {
   collections: Collection[];

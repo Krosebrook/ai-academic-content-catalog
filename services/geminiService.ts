@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -13,7 +12,7 @@ import {
   imageContentSchema,
   rubricRowSchema
 } from '../types/education';
-import { getPersona } from '../utils/settingsStorage';
+import { getPersona } from '../api/apiService'; // Updated path
 import { z } from 'zod';
 
 // According to guidelines, API key must come from process.env.API_KEY
@@ -111,8 +110,11 @@ export interface GenerationParams {
   standard?: string;
   customInstructions?: string;
   useGrounding?: boolean;
+  packageContents?: string[]; // For package generation
   [key: string]: any; // for other params
 }
+
+type StorableContent = EducationalContent | Assessment | RubricContent | ImageContent;
 
 async function generateAndValidate<S extends z.ZodType<any>>(
     prompt: string, 
@@ -122,7 +124,7 @@ async function generateAndValidate<S extends z.ZodType<any>>(
     model: string = 'gemini-2.5-flash'
 ): Promise<{ data: z.infer<S>; sources?: Source[] }> {
     
-    const persona = getPersona();
+    const persona = await getPersona(); // Now async
     const config: any = {};
     if (persona) {
         config.systemInstruction = persona;
@@ -143,7 +145,6 @@ async function generateAndValidate<S extends z.ZodType<any>>(
 
     const jsonText = response.text;
     
-    // Attempt to find and parse a JSON object from the response text
     const jsonMatch = jsonText.match(/```json\n([\s\S]*?)\n```|({[\s\S]*})/);
     if (!jsonMatch) {
       throw new Error("Could not find a valid JSON object in the API response.");
@@ -174,13 +175,14 @@ async function generateAndValidate<S extends z.ZodType<any>>(
 }
 
 
-export const generateEducationalContent = async (params: GenerationParams): Promise<EducationalContent> => {
+export const generateEducationalContent = async (params: GenerationParams, userId: string, lessonContext: string = ''): Promise<Omit<EducationalContent, 'id' | 'user_id' | 'generatedAt'>> => {
     const prompt = `
         You are an expert curriculum designer. Generate a high-quality educational resource based on the following specifications.
         The output must be a single JSON object that strictly adheres to the provided schema.
         The main 'content' field should be formatted as rich HTML.
         
         ${params.useGrounding ? 'Use your knowledge and the provided search results to create an accurate and informative response.' : ''}
+        ${lessonContext ? `Base this resource on the following context: ${lessonContext}` : ''}
 
         Tool: ${params.toolName}
         Topic: ${params.topic}
@@ -192,29 +194,25 @@ export const generateEducationalContent = async (params: GenerationParams): Prom
 
     const type: EducationalContent['type'] = params.toolId.startsWith('lp-') ? 'lesson' : params.toolId.startsWith('pp-') ? 'printable' : 'activity';
 
-    const zodSchema = educationalContentSchema.omit({ id: true, type: true, generatedAt: true, toolId: true, collectionId: true, sources: true });
+    const zodSchema = educationalContentSchema.omit({ id: true, user_id: true, generatedAt: true, toolId: true, collectionId: true, sources: true, type: true });
     const { data, sources } = await generateAndValidate(prompt, lessonPlanSchemaForAPI, zodSchema, !!params.useGrounding);
 
-    const result: EducationalContent = {
+    return {
         ...data,
-        id: uuidv4(),
         type: type,
         sources: sources,
-        generatedAt: new Date().toISOString(),
         toolId: params.toolId,
     };
-    
-    educationalContentSchema.parse(result);
-    return result;
 };
 
-export const generateAssessment = async (params: GenerationParams): Promise<Assessment> => {
+export const generateAssessment = async (params: GenerationParams, userId: string, lessonContext: string = ''): Promise<Omit<Assessment, 'id' | 'user_id' | 'generatedAt'>> => {
     const prompt = `
         You are an expert assessment creator. Generate a high-quality assessment based on the following specifications.
         The output must be a single JSON object that strictly adheres to the provided schema.
         For multiple choice questions with multiple correct answers, the answerKey should be a JSON string array.
         
         ${params.useGrounding ? 'Use your knowledge and the provided search results to create accurate and relevant questions.' : ''}
+        ${lessonContext ? `Base this assessment on the following lesson content to ensure relevance: ${lessonContext}` : ''}
 
         Tool: ${params.toolName}
         Topic: ${params.topic}
@@ -239,35 +237,27 @@ export const generateAssessment = async (params: GenerationParams): Promise<Asse
 
     const { data, sources } = await generateAndValidate(prompt, assessmentSchemaForAPI, apiResponseSchema, !!params.useGrounding);
 
-    // Post-process answer keys and calculate total points
     let pointsTotal = 0;
     const questions = data.questions.map((q) => {
         pointsTotal += q.points;
         let answerKey: string | string[] = q.answerKey;
         if (q.type === 'multiple-choice' && typeof q.answerKey === 'string' && q.answerKey.startsWith('[')) {
-            try {
-                answerKey = JSON.parse(q.answerKey);
-            } catch (e) { /* ignore */ }
+            try { answerKey = JSON.parse(q.answerKey); } catch (e) { /* ignore */ }
         }
         return { ...q, id: uuidv4(), answerKey };
     });
 
-    const result: Assessment = {
+    return {
         ...data,
-        id: uuidv4(),
         type: 'assessment' as const,
         questions,
         pointsTotal,
         sources: sources,
-        generatedAt: new Date().toISOString(),
         toolId: params.toolId,
     };
-    
-    assessmentSchema.parse(result);
-    return result;
 };
 
-export const generateRubric = async (params: GenerationParams): Promise<RubricContent> => {
+export const generateRubric = async (params: GenerationParams, userId: string): Promise<Omit<RubricContent, 'id' | 'user_id' | 'generatedAt'>> => {
     const prompt = `
         You are an expert in educational rubrics. Generate a detailed rubric based on the following specifications.
         The output must be a single JSON object that strictly adheres to the provided schema.
@@ -278,27 +268,20 @@ export const generateRubric = async (params: GenerationParams): Promise<RubricCo
         ${params.customInstructions ? `Additional Instructions: ${params.customInstructions}` : ''}
     `;
     
-    const apiResponseSchema = rubricContentSchema.omit({id: true, type: true, generatedAt: true, toolId: true, collectionId: true}).extend({
-        rows: z.array(rubricRowSchema.omit({id: true}))
-    });
+    const apiResponseSchema = rubricContentSchema.omit({id: true, user_id: true, type: true, generatedAt: true, toolId: true, collectionId: true});
 
     const { data } = await generateAndValidate(prompt, rubricSchemaForAPI, apiResponseSchema, false);
 
-    const result: RubricContent = {
+    return {
         ...data,
-        id: uuidv4(),
         type: 'rubric',
         rows: data.rows.map((r) => ({...r, id: uuidv4()})),
-        generatedAt: new Date().toISOString(),
         toolId: params.toolId,
     };
-
-    rubricContentSchema.parse(result);
-    return result;
 };
 
 
-export const generateImage = async (params: GenerationParams): Promise<ImageContent> => {
+export const generateImage = async (params: GenerationParams, userId: string): Promise<Omit<ImageContent, 'id' | 'user_id' | 'generatedAt'>> => {
     const response = await ai.models.generateImages({
         model: 'imagen-4.0-generate-001',
         prompt: params.topic,
@@ -315,18 +298,71 @@ export const generateImage = async (params: GenerationParams): Promise<ImageCont
     
     const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
 
-    const imageData: ImageContent = {
-        id: uuidv4(),
+    return {
         type: 'image',
         title: `Image for ${params.subject}: ${params.topic}`,
         prompt: params.topic,
         base64Image: base64ImageBytes,
-        generatedAt: new Date().toISOString(),
         toolId: params.toolId,
     };
-    
-    // Validate with Zod
-    imageContentSchema.parse(imageData);
-
-    return imageData;
 };
+
+export const generateContentPackage = async (params: GenerationParams, userId: string, onProgress: (message: string) => void): Promise<StorableContent[]> => {
+    const results: StorableContent[] = [];
+    let lessonContext = '';
+
+    // 1. Generate Lesson Plan
+    if (params.packageContents?.includes('lesson')) {
+        onProgress('Generating Lesson Plan...');
+        const lessonParams: GenerationParams = {...params, toolId: 'lp-01', toolName: 'Differentiated Lesson Plan' };
+        const lessonData = await generateEducationalContent(lessonParams, userId);
+        const lesson = { ...lessonData, id: uuidv4(), user_id: userId, generatedAt: new Date().toISOString() };
+        results.push(lesson);
+        lessonContext = lesson.content; // Use this for other generations
+    }
+
+    // 2. Generate Assessment
+    if (params.packageContents?.includes('assessment')) {
+        onProgress('Generating Assessment...');
+        const assessmentParams: GenerationParams = {...params, toolId: 'as-01', toolName: 'Multiple Choice Quiz' };
+        const assessmentData = await generateAssessment(assessmentParams, userId, lessonContext);
+        const assessment = { ...assessmentData, id: uuidv4(), user_id: userId, generatedAt: new Date().toISOString() };
+        results.push(assessment);
+    }
+
+    // 3. Generate Study Guide (as an 'activity' type)
+    if (params.packageContents?.includes('study-guide')) {
+        onProgress('Generating Study Guide...');
+        const studyGuideParams: GenerationParams = {...params, toolId: 'sa-02', toolName: 'Smart Study Guide', customInstructions: "Create a concise study guide based on the provided lesson context. Include key vocabulary, main concepts, and a few practice questions." };
+        const studyGuideData = await generateEducationalContent(studyGuideParams, userId, lessonContext);
+        studyGuideData.title = `Study Guide for: ${params.topic}`;
+        const studyGuide = { ...studyGuideData, id: uuidv4(), user_id: userId, generatedAt: new Date().toISOString() };
+        results.push(studyGuide);
+    }
+
+    onProgress('Package generation complete!');
+    return results;
+};
+
+
+// Phase 5: Student Assistant
+export async function getTutorResponse(content: string, studentQuestion: string): Promise<string> {
+    const prompt = `
+      You are a helpful AI teaching assistant. Your knowledge is strictly limited to the provided text below.
+      Answer the student's question based *only* on this text. Do not use any outside information.
+      If the answer is not in the text, say "I'm sorry, but I can only answer questions about the provided lesson material."
+
+      --- LESSON MATERIAL ---
+      ${content}
+      --- END LESSON MATERIAL ---
+
+      Student's Question: "${studentQuestion}"
+    `;
+
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+    });
+    
+    return response.text;
+}

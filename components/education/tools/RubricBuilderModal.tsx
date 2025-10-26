@@ -1,13 +1,13 @@
-
 import React, { useState } from 'react';
 import { RubricContent, RubricRow, RubricLevel } from '../../../types/education';
 import FFCard from '../shared/FFCard';
 import FFButton from '../shared/FFButton';
 import { v4 as uuidv4 } from 'uuid';
+import { useAuth } from '../../../auth/AuthContext';
 
 interface RubricBuilderModalProps {
   onClose: () => void;
-  onSave: (rubric: RubricContent) => void;
+  onSave: (rubric: Omit<RubricContent, 'id' | 'user_id' | 'generatedAt'>) => void;
   initialRubric?: RubricContent;
 }
 
@@ -22,14 +22,14 @@ const RubricBuilderModal: React.FC<RubricBuilderModalProps> = ({ onClose, onSave
   const [rows, setRows] = useState<RubricRow[]>(initialRubric?.rows || [
     { id: uuidv4(), criterion: '', levels: JSON.parse(JSON.stringify(defaultLevels)) }
   ]);
+  const { session } = useAuth();
 
   const handleSave = () => {
-    const newRubric: RubricContent = {
-      id: initialRubric?.id || uuidv4(),
-      type: 'rubric',
+    if (!session) return;
+    const newRubric = {
+      type: 'rubric' as const,
       title,
       rows,
-      generatedAt: new Date().toISOString(),
       toolId: initialRubric?.toolId || 'as-11', // Custom Rubric Builder
     };
     onSave(newRubric);

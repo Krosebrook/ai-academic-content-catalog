@@ -1,13 +1,13 @@
-
 import React, { Suspense, lazy } from 'react';
-import { useAuth } from './utils/auth-protection';
+import { useAuth } from './auth/AuthContext';
+import { DataProvider } from './data/DataProvider';
+import AuthPage from './components/auth/AuthPage';
 
 const EducationPage = lazy(() => import('./components/pages/EducationPage'));
-const LandingPage = lazy(() => import('./components/pages/LandingPage'));
 const SharePage = lazy(() => import('./components/pages/SharePage'));
 
 const App: React.FC = () => {
-  const { isAuthenticated, login, logout, startDemoSession } = useAuth();
+  const { session } = useAuth();
 
   if (window.location.pathname.startsWith('/share/')) {
     return (
@@ -29,43 +29,33 @@ const App: React.FC = () => {
            </h1>
         </div>
         <div>
-          {isAuthenticated ? (
-            <button
-              onClick={logout}
-              className="bg-ff-accent text-white py-2 px-4 rounded-lg"
-              style={{ fontFamily: 'var(--ff-font-secondary)', fontSize: 'var(--ff-text-sm)', fontWeight: 'var(--ff-weight-semibold)' }}
-            >
-              Sign Out
-            </button>
-          ) : (
-            <div className="flex gap-2">
+          {session ? (
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-ff-text-muted">{session.user.email}</span>
               <button
-                onClick={login}
-                className="bg-ff-primary text-white py-2 px-4 rounded-lg"
+                onClick={() => useAuth.getState().signOut()}
+                className="bg-ff-accent text-white py-2 px-4 rounded-lg"
                 style={{ fontFamily: 'var(--ff-font-secondary)', fontSize: 'var(--ff-text-sm)', fontWeight: 'var(--ff-weight-semibold)' }}
               >
-                Sign In
-              </button>
-              <button
-                onClick={startDemoSession}
-                className="bg-ff-secondary text-white py-2 px-4 rounded-lg"
-                style={{ fontFamily: 'var(--ff-font-secondary)', fontSize: 'var(--ff-text-sm)', fontWeight: 'var(--ff-weight-semibold)' }}
-              >
-                Start Demo
+                Sign Out
               </button>
             </div>
+          ) : (
+             <span className="text-sm text-ff-text-muted">Please sign in to continue</span>
           )}
         </div>
       </header>
 
       <main>
         <Suspense fallback={<div className="p-8 text-center">Loading...</div>}>
-          {isAuthenticated ? (
-             <div className="p-4 md:p-8">
-                <EducationPage />
-             </div>
+          {!session ? (
+             <AuthPage />
           ) : (
-             <LandingPage onLogin={login} onStartDemo={startDemoSession} />
+             <DataProvider>
+                <div className="p-4 md:p-8">
+                    <EducationPage />
+                </div>
+             </DataProvider>
           )}
         </Suspense>
       </main>

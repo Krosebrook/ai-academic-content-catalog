@@ -1,7 +1,6 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { RubricContent } from '../../../types/education';
-import { loadContent } from '../../../utils/contentStorage';
+import { useData } from '../../../data/DataProvider';
 import FFCard from '../shared/FFCard';
 import FFButton from '../shared/FFButton';
 
@@ -11,14 +10,12 @@ interface SelectRubricModalProps {
 }
 
 const SelectRubricModal: React.FC<SelectRubricModalProps> = ({ onClose, onSelect }) => {
-  const [rubrics, setRubrics] = useState<RubricContent[]>([]);
+  const { content } = useData();
   const [selectedRubricId, setSelectedRubricId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const allContent = loadContent();
-    const savedRubrics = allContent.filter(c => c.type === 'rubric') as RubricContent[];
-    setRubrics(savedRubrics);
-  }, []);
+  const rubrics = useMemo(() => {
+    return content.filter(c => c.type === 'rubric').map(c => c.data as RubricContent);
+  }, [content]);
 
   const handleSelect = () => {
     const selected = rubrics.find(r => r.id === selectedRubricId);
