@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { GenerationParams, EducationalContent, Assessment, RubricContent, Rubric, ImageContent } from '../../types/education';
 import { generateContent, generateImage } from '../../services/geminiService';

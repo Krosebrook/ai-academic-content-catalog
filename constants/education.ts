@@ -1,4 +1,3 @@
-
 export const EDUCATIONAL_STANDARDS = [
   'Common Core State Standards', 'Next Generation Science Standards (NGSS)',
   'International Baccalaureate (IB)', 'Advanced Placement (AP)', 'State Standards',

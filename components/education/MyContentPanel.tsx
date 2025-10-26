@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { EducationalContent, Assessment, RubricContent, ImageContent } from '../../types/education';
 import { loadContent } from '../../utils/contentStorage';

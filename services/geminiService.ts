@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationParams, EducationalContent, Assessment, RubricGenerationParams, RubricContent, ImageContent } from "../types/education";
 

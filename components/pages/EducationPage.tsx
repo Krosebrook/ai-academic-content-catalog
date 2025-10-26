@@ -1,9 +1,11 @@
 
-import React, { useState } from 'react';
+
+import React, { useState, Suspense, lazy } from 'react';
 import EducationalContentStudio from '../education/EducationalContentStudio';
 import MyContentPanel from '../education/MyContentPanel';
 import EducationalToolsRouter from '../education/EducationalToolsRouter';
-import EducationAnalyticsPanel from '../education/analytics/EducationAnalyticsPanel';
+
+const EducationAnalyticsPanel = lazy(() => import('../education/analytics/EducationAnalyticsPanel'));
 
 type Tab = 'studio' | 'my-content' | 'tools' | 'analytics';
 
@@ -45,7 +47,11 @@ const EducationPage: React.FC = () => {
       case 'tools':
         return <EducationalToolsRouter onSelectTool={handleSelectTool} />;
       case 'analytics':
-        return <EducationAnalyticsPanel />;
+        return (
+          <Suspense fallback={<div className="p-8 text-center">Loading Analytics...</div>}>
+            <EducationAnalyticsPanel />
+          </Suspense>
+        );
       default:
         return null;
     }
