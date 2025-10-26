@@ -1,3 +1,4 @@
+
 // FIX: Add a Deno global type definition to resolve "Cannot find name 'Deno'" errors
 // in environments where Deno's types are not automatically available. This replaces
 // the /// <reference lib="deno.unstable" /> directive which was causing a
@@ -6,7 +7,8 @@ declare const Deno: any;
 
 // Note: This is a Deno-based Supabase Edge Function.
 // It requires setting the SUPABASE_SERVICE_ROLE_KEY and GEMINI_API_KEY environment variables in Supabase.
-import { GoogleGenAI, Type } from "https://esm.sh/@google/genai@0.1.3";
+// FIX: Corrected import path for @google/genai to a more recent version.
+import { GoogleGenAI, Type } from "https://esm.sh/@google/genai@0.8.0";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 const generationParamsSchema = z.object({
@@ -27,16 +29,16 @@ const lessonPlanSchema = {
         subject: { type: Type.STRING },
         gradeLevel: { type: Type.STRING },
         standard: { type: Type.STRING, description: "The educational standard, if provided." },
-        content: { type: Type.STRING, description: "The full lesson plan in Markdown format." },
+        content: { type: Type.STRING, description: "The full lesson plan in rich HTML format, including headings, lists, bold text, etc." },
         metadata: {
             type: Type.OBJECT,
             properties: {
                 duration: { type: Type.STRING, description: "Estimated duration, e.g., '45 minutes'." },
                 materials: { type: Type.ARRAY, items: { type: Type.STRING } },
                 objectives: { type: Type.ARRAY, items: { type: Type.STRING } },
-                differentiation: { type: Type.ARRAY, items: { type: Type.STRING } },
+                differentiation: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Strategies for different learner needs." },
             },
-            required: ["duration", "materials", "objectives"]
+            required: ["duration", "materials", "objectives", "differentiation"]
         },
     },
     required: ["title", "targetAudience", "subject", "gradeLevel", "content", "metadata"]
@@ -54,12 +56,12 @@ const assessmentSchema = {
                 properties: {
                     type: { type: Type.STRING, enum: ['multiple-choice', 'short-answer', 'essay', 'true-false'] },
                     prompt: { type: Type.STRING },
-                    choices: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    choices: { type: Type.ARRAY, items: { type: Type.STRING }, description: "A list of choices for multiple-choice questions." },
                     answerKey: {
                         type: Type.STRING,
                         description: 'The correct answer. For multiple-choice with multiple answers, provide a JSON string array of the correct choices (e.g., \'["Choice A", "Choice C"]\'). For essay questions, this can be a sample answer or key points. For true/false, it should be "true" or "false".'
                     },
-                    points: { type: Type.NUMBER },
+                    points: { type: Type.INTEGER },
                 },
                 required: ["type", "prompt", "answerKey", "points"]
             }
@@ -104,7 +106,7 @@ Deno.serve(async (req: Request) => {
         - Topic: ${params.topic}
         ${params.standard ? `- Align to Standard: ${params.standard}` : ''}
         
-        The output must be a single JSON object that strictly adheres to the provided schema.
+        The output must be a single JSON object that strictly adheres to the provided schema. For lesson plans, the content field must be rich HTML.
     `;
 
     const response = await ai.models.generateContent({

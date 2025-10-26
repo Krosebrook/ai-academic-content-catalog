@@ -1,139 +1,128 @@
+
 import React, { useState, useMemo } from 'react';
-import { Assessment, RubricContent, ImageContent } from '../../types/education';
 import { useData } from '../../data/DataProvider';
-import { GRADE_LEVELS } from '../../constants/education';
+import { EducationalContent, Assessment, RubricContent, ImageContent } from '../../types/education';
 import FFCard from './shared/FFCard';
-import ExportMenu from './exports/ExportMenu';
 import FFButton from './shared/FFButton';
-import ShareModal from './modals/ShareModal';
 import NewCollectionModal from './modals/NewCollectionModal';
 import MoveToCollectionModal from './modals/MoveToCollectionModal';
-import AssessmentViewer from './shared/AssessmentViewer';
-import CommentsSidebar from '../collaboration/CommentsSidebar';
-import CollaborationShareModal from '../collaboration/CollaborationShareModal';
+import ShareModal from './modals/ShareModal';
+import ContentRenderer from './shared/ContentRenderer';
 
-type StorableContent = ReturnType<typeof useData>['content'][0];
+type StorableContent = EducationalContent | Assessment | RubricContent | ImageContent;
 
 interface MyContentPanelProps {
-    onRemix: (content: StorableContent) => void;
+  onRemix: (content: StorableContent) => void;
 }
 
-const ContentTypeIcon: React.FC<{ type: string }> = ({ type }) => {
-    const iconMap: Record<string, string> = { 'lesson': '📚', 'assessment': '📝', 'assessment-questions': '📝', 'activity': '🎲', 'resource': '💡', 'printable': '📄', 'rubric': '⚖️', 'image': '🖼️' };
-    return <span className="text-2xl mr-4" title={type}>{iconMap[type] || '📄'}</span>;
-};
-
 const MyContentPanel: React.FC<MyContentPanelProps> = ({ onRemix }) => {
-    const { content: allContent, collections, addCollection, updateContent, loading, error } = useData();
-    const [selectedContentId, setSelectedContentId] = useState<string | null>(null);
-    const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>('all');
-    
-    const [shareContent, setShareContent] = useState<StorableContent | null>(null);
-    const [moveContent, setMoveContent] = useState<StorableContent | null>(null);
-    const [isNewCollectionOpen, setIsNewCollectionOpen] = useState(false);
-    const [collabShareContent, setCollabShareContent] = useState<StorableContent | null>(null);
-    const [viewingComments, setViewingComments] = useState<StorableContent | null>(null);
-    
-    const [searchQuery, setSearchQuery] = useState('');
-    const [typeFilter, setTypeFilter] = useState('all');
-    const [subjectFilter, setSubjectFilter] = useState('all');
-    const [sortOption, setSortOption] = useState('date-desc');
-    const [isStudentView, setIsStudentView] = useState(false);
+  const { content, collections, loading, error, addCollection, updateContent } = useData();
+  
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewingContent, setViewingContent] = useState<StorableContent | null>(null);
 
-    const handleCreateCollection = (name: string) => addCollection(name);
-    const handleMoveContent = (collectionId: string | null) => {
-        if (!moveContent) return;
-        updateContent(moveContent.id, { ...moveContent, collectionId: collectionId || undefined });
-        setMoveContent(null);
-    };
+  // Modals state
+  const [isNewCollectionModalOpen, setIsNewCollectionModalOpen] = useState(false);
+  const [isMoveModalOpen, setIsMoveModalOpen] = useState<StorableContent | null>(null);
+  const [isShareModalOpen, setIsShareModalOpen] = useState<StorableContent | null>(null);
 
-    const sortedAndFilteredContent = useMemo(() => {
-        const filtered = allContent.filter(c => {
-            if (selectedCollectionId !== 'all' && c.collectionId !== selectedCollectionId) return false;
-            if (searchQuery && !c.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-            if (typeFilter !== 'all' && c.type !== typeFilter) return false;
-            if (subjectFilter !== 'all' && (!c.data || !c.data.subject || c.data.subject !== subjectFilter)) return false;
-            return true;
-        });
+  const filteredContent = useMemo(() => {
+    return content
+      .filter(c => selectedCollectionId === null || c.collectionId === selectedCollectionId)
+      .filter(c => c.title.toLowerCase().includes(searchQuery.toLowerCase()));
+  }, [content, selectedCollectionId, searchQuery]);
 
-        const [key, direction] = sortOption.split('-');
-        return filtered.sort((a, b) => {
-            if (key === 'date') return direction === 'asc' ? new Date(a.generatedAt).getTime() - new Date(b.generatedAt).getTime() : new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime();
-            const valA = (key === 'title' ? a.title : a.type);
-            const valB = (key === 'title' ? b.title : b.type);
-            return direction === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
-        });
-    }, [allContent, selectedCollectionId, searchQuery, typeFilter, subjectFilter, sortOption]);
-    
-    const { contentTypes, subjects } = useMemo(() => {
-        const uniqueTypes = [...new Set(allContent.map(c => c.type))].sort();
-        const uniqueSubjects = [...new Set(allContent.map(c => c.data?.subject).filter(Boolean))].sort((a,b) => String(a).localeCompare(String(b)));
-        return { contentTypes: uniqueTypes, subjects };
-    }, [allContent]);
-    
-    const formatDate = (isoString: string) => new Date(isoString).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-    const capitalize = (s: string) => s.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  const handleSaveCollection = async (name: string) => {
+    await addCollection(name);
+    setIsNewCollectionModalOpen(false);
+  };
 
-    if (loading) return <div>Loading content...</div>;
-    if (error) return <div className="text-red-400">Error: {error}</div>;
+  const handleMoveContent = async (collectionId: string | null) => {
+    if (isMoveModalOpen) {
+      await updateContent(isMoveModalOpen.id, { collectionId });
+      setIsMoveModalOpen(null);
+    }
+  };
 
+  if (viewingContent) {
     return (
-        <div className="ff-fade-in-up">
-            <h2 style={{ fontFamily: 'var(--ff-font-primary)' }} className="text-2xl font-bold mb-6">My Content Library</h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-                <aside className="md:col-span-1">
-                    <FFButton onClick={() => setIsNewCollectionOpen(true)} className="w-full mb-4">New Collection</FFButton>
-                    <div className="space-y-2"><button onClick={() => setSelectedCollectionId('all')} className={`w-full text-left p-3 rounded-lg ${selectedCollectionId === 'all' ? 'bg-ff-primary text-white' : 'bg-ff-surface'}`}>All Content</button>
-                        {collections.map(col => (<button key={col.id} onClick={() => setSelectedCollectionId(col.id)} className={`w-full text-left p-3 rounded-lg ${selectedCollectionId === col.id ? 'bg-ff-primary text-white' : 'bg-ff-surface'}`}>{col.name}</button>))}
-                    </div>
-                </aside>
-                <main className="md:col-span-3">
-                    <FFCard className="mb-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-center">
-                            <input type="text" placeholder="Search by title..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10 md:col-span-2 lg:col-span-1" />
-                            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10 capitalize"><option value="all">All Types</option>{contentTypes.map(type => <option key={type} value={type}>{capitalize(type)}</option>)}</select>
-                            <select value={subjectFilter} onChange={e => setSubjectFilter(e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10"><option value="all">All Subjects</option>{subjects.map(s => <option key={s} value={s}>{s}</option>)}</select>
-                            <select value={sortOption} onChange={e => setSortOption(e.target.value)} className="w-full bg-ff-surface p-2 rounded-md border border-slate-600 h-10"><option value="date-desc">Sort: Date (Newest)</option><option value="date-asc">Sort: Date (Oldest)</option><option value="title-asc">Sort: Title (A-Z)</option><option value="title-desc">Sort: Title (Z-A)</option><option value="type-asc">Sort: Type (A-Z)</option><option value="type-desc">Sort: Type (Z-A)</option></select>
-                        </div>
-                    </FFCard>
-
-                    {sortedAndFilteredContent.length > 0 ? (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-                            {sortedAndFilteredContent.map(content => {
-                                const isSelected = selectedContentId === content.id;
-                                const selectedContent = isSelected ? content : null;
-                                return (
-                                <FFCard key={content.id} className="flex flex-col cursor-pointer ff-hover-lift" onClick={() => setSelectedContentId(isSelected ? null : content.id)}>
-                                    <div className="flex items-start">
-                                        <ContentTypeIcon type={content.type} /><div className="flex-1"><h3 className="text-lg leading-tight mb-1 font-semibold">{content.title}</h3><p className="text-sm text-ff-text-muted capitalize">{capitalize(content.type)}{content.data?.subject && ` • ${content.data.subject}`}</p><p className="text-xs text-ff-text-muted mt-2">Generated: {formatDate(content.generatedAt)}</p></div>
-                                    </div>
-                                    {isSelected && selectedContent && (
-                                        <div className="mt-4 pt-4 border-t border-slate-700 ff-fade-in-up">
-                                            {(selectedContent.type === 'assessment' || selectedContent.type === 'assessment-questions') ? (<><div className="flex justify-end items-center mb-2"><label htmlFor="student-view" className="text-sm mr-2">Student View</label><input type="checkbox" id="student-view" checked={isStudentView} onChange={e => setIsStudentView(e.target.checked)} /></div><AssessmentViewer assessment={selectedContent.data as Assessment} studentView={isStudentView} /></>) : selectedContent.type === 'image' && (<img src={`data:image/png;base64,${selectedContent.data.base64Image}`} alt={selectedContent.title} className="rounded-lg mb-4" />)}
-                                            <ExportMenu content={selectedContent.data} />
-                                            <div className="mt-4 flex flex-wrap gap-2">
-                                                <FFButton variant="accent" onClick={(e) => { e.stopPropagation(); onRemix(selectedContent.data); }}>Remix</FFButton>
-                                                <FFButton variant="secondary" onClick={(e) => { e.stopPropagation(); setShareContent(selectedContent.data); }}>Share Publicly</FFButton>
-                                                <FFButton variant="secondary" onClick={(e) => { e.stopPropagation(); setCollabShareContent(selectedContent); }}>Collaborate</FFButton>
-                                                <FFButton variant="secondary" onClick={(e) => { e.stopPropagation(); setViewingComments(selectedContent); }}>Comments</FFButton>
-                                                <FFButton variant="secondary" onClick={(e) => { e.stopPropagation(); setMoveContent(selectedContent); }}>Move</FFButton>
-                                                <FFButton variant="primary" className="bg-teal-600">Publish</FFButton>
-                                            </div>
-                                        </div>
-                                    )}
-                                </FFCard>
-                            )})}
-                        </div>
-                    ) : (<div className="text-center py-20"><h3 className="text-xl font-bold">No Content Found</h3><p className="text-ff-text-muted mt-4">No items match your current criteria.</p></div>)}
-                </main>
-            </div>
-            {shareContent && <ShareModal content={shareContent} onClose={() => setShareContent(null)} />}
-            {collabShareContent && <CollaborationShareModal content={collabShareContent} onClose={() => setCollabShareContent(null)} />}
-            {isNewCollectionOpen && <NewCollectionModal onClose={() => setIsNewCollectionOpen(false)} onSave={handleCreateCollection} />}
-            {moveContent && <MoveToCollectionModal collections={collections} onClose={() => setMoveContent(null)} onMove={handleMoveContent} />}
-            {viewingComments && <CommentsSidebar content={viewingComments} onClose={() => setViewingComments(null)} />}
+      <div className="ff-fade-in-up">
+        <FFButton onClick={() => setViewingContent(null)} variant="secondary" className="mb-4">&larr; Back to My Content</FFButton>
+        <ContentRenderer content={viewingContent} />
+         <div className="flex justify-end gap-2 mt-4">
+            <FFButton variant="secondary" onClick={() => onRemix(viewingContent)}>Remix</FFButton>
+            <FFButton variant="secondary" onClick={() => setIsShareModalOpen(viewingContent)}>Share</FFButton>
         </div>
+      </div>
     );
+  }
+
+  return (
+    <>
+      <div className="flex flex-col md:flex-row gap-8 ff-fade-in-up">
+        {/* Sidebar */}
+        <aside className="md:w-1/4 lg:w-1/5">
+          <div className="flex justify-between items-center mb-4 px-2">
+            <h2 style={{fontFamily: 'var(--ff-font-primary)'}} className="text-lg font-semibold">Collections</h2>
+            <button onClick={() => setIsNewCollectionModalOpen(true)} className="text-ff-primary hover:text-ff-secondary text-2xl font-light">+</button>
+          </div>
+          <ul className="space-y-1">
+            <li>
+                <button onClick={() => setSelectedCollectionId(null)} className={`w-full text-left p-3 rounded-lg ${selectedCollectionId === null ? 'bg-ff-primary text-white' : 'hover:bg-ff-surface'}`}>
+                    All Content
+                </button>
+            </li>
+            {collections.map(col => (
+              <li key={col.id}>
+                <button onClick={() => setSelectedCollectionId(col.id)} className={`w-full text-left p-3 rounded-lg ${selectedCollectionId === col.id ? 'bg-ff-primary text-white' : 'hover:bg-ff-surface'}`}>
+                  {col.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </aside>
+        
+        {/* Main Content */}
+        <main className="flex-1">
+          <input 
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search your content..."
+            className="w-full bg-ff-surface border border-slate-600 rounded-lg p-3 mb-6"
+          />
+          {loading && <p>Loading content...</p>}
+          {error && <p className="text-red-400">Error: {error}</p>}
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {!loading && filteredContent.map(item => (
+              <FFCard key={item.id} className="flex flex-col justify-between ff-hover-lift">
+                <div>
+                    <h3 onClick={() => setViewingContent(item)} className="font-bold text-lg cursor-pointer hover:text-ff-primary">{item.title}</h3>
+                    <p className="text-sm text-ff-text-muted capitalize">{item.type}</p>
+                </div>
+                <div className="flex justify-end gap-2 mt-4">
+                    <FFButton variant="secondary" style={{fontSize: '12px', padding: '4px 8px'}} onClick={() => onRemix(item)}>Remix</FFButton>
+                    <FFButton variant="secondary" style={{fontSize: '12px', padding: '4px 8px'}} onClick={() => setIsMoveModalOpen(item)}>Move</FFButton>
+                    <FFButton variant="secondary" style={{fontSize: '12px', padding: '4px 8px'}} onClick={() => setIsShareModalOpen(item)}>Share</FFButton>
+                </div>
+              </FFCard>
+            ))}
+          </div>
+          {!loading && filteredContent.length === 0 && (
+            <div className="text-center py-16 text-ff-text-muted">
+                <p>No content found.</p>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {isNewCollectionModalOpen && <NewCollectionModal onClose={() => setIsNewCollectionModalOpen(false)} onSave={handleSaveCollection} />}
+      {isMoveModalOpen && <MoveToCollectionModal collections={collections} onClose={() => setIsMoveModalOpen(null)} onMove={handleMoveContent} />}
+      {isShareModalOpen && <ShareModal content={isShareModalOpen} onClose={() => setIsShareModalOpen(null)} />}
+    </>
+  );
 };
 
 export default MyContentPanel;

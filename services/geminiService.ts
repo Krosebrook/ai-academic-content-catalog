@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -12,7 +13,7 @@ import {
   imageContentSchema,
   rubricRowSchema
 } from '../types/education';
-import { getPersona } from '../api/apiService'; // Updated path
+import { getPersona } from '../api/apiService';
 import { z } from 'zod';
 
 // According to guidelines, API key must come from process.env.API_KEY
@@ -298,12 +299,15 @@ export const generateImage = async (params: GenerationParams, userId: string): P
     
     const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
 
+    // FIX: Added subject and gradeLevel to the return object to match the ImageContent type.
     return {
         type: 'image',
         title: `Image for ${params.subject}: ${params.topic}`,
         prompt: params.topic,
         base64Image: base64ImageBytes,
         toolId: params.toolId,
+        subject: params.subject,
+        gradeLevel: params.gradeLevel,
     };
 };
 
